@@ -1,5 +1,5 @@
 use ferris_says::say; // from the previous step
-use std::io::{stdout, BufWriter};
+use std::io::{BufWriter, stdout};
 
 fn main() {
     let stdout = stdout();
