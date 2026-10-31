@@ -1,5 +1,6 @@
-use quantum_agent::detect::{Language, scan_source_files};
+use quantum_agent::detect::Language;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -7,46 +8,59 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// Returns the scanned files as paths relative to the fixture root, sorted for stable comparison.
-fn relative_results(name: &str) -> Vec<(String, Language)> {
+/// Runs the binary on one fixture repo and returns its detected files as
+/// `(language label, path relative to the fixture root)`, sorted for stable comparison.
+fn run_program(name: &str) -> Vec<(String, String)> {
     let root = fixture(name);
-    let mut results: Vec<(String, Language)> = scan_source_files(&root)
-        .into_iter()
-        .map(|(path, language)| {
-            let relative = path
-                .strip_prefix(&root)
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            (relative, language)
+    let output = Command::new(env!("CARGO_BIN_EXE_quantum-agent"))
+        .arg(&root)
+        .output()
+        .expect("failed to run quantum-agent");
+    assert!(
+        output.status.success(),
+        "quantum-agent failed on {}: {}",
+        name,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("output is not UTF-8");
+    let root_prefix = format!("{}/", root.display());
+    let mut results: Vec<(String, String)> = stdout
+        .lines()
+        .filter_map(|line| {
+            let (label_and_percent, path) = line.split_once("%  ")?;
+            let label = label_and_percent.split_whitespace().next()?;
+            let relative = path.strip_prefix(&root_prefix)?;
+            Some((label.to_string(), relative.to_string()))
         })
         .collect();
-    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results.sort();
     results
+}
+
+fn expected(label: &str, relative: &str) -> (String, String) {
+    (label.to_string(), relative.to_string())
 }
 
 #[test]
 fn finds_python_files_in_nested_directories() {
     assert_eq!(
-        relative_results("python_project"),
-        vec![("pkg/app.py".to_string(), Language::Python)]
+        run_program("python_project"),
+        vec![expected("Python", "pkg/app.py")]
     );
 }
 
 #[test]
 fn skips_node_modules() {
     assert_eq!(
-        relative_results("js_with_node_modules"),
-        vec![("index.ts".to_string(), Language::JavaScriptTypeScript)]
+        run_program("js_with_node_modules"),
+        vec![expected("JS/TS", "index.ts")]
     );
 }
 
 #[test]
 fn respects_gitignore_and_ignores_unsupported_extensions() {
-    assert_eq!(
-        relative_results("gitignored"),
-        vec![("main.go".to_string(), Language::Go)]
-    );
+    assert_eq!(run_program("gitignored"), vec![expected("Go", "main.go")]);
 }
 
 #[test]

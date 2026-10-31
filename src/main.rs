@@ -7,6 +7,7 @@ fn main() {
     let mut files = scan_source_files(Path::new(&root));
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
+    let total = files.len() as f64;
     for (path, language) in &files {
         let name = match language {
             Language::Python => "Python",
@@ -14,7 +15,8 @@ fn main() {
             Language::JavaScriptTypeScript => "JS/TS",
             Language::Go => "Go",
         };
-        println!("{:<8} {}", name, path.display());
+        let percent = 100.0 / total;
+        println!("{:<8} {:>5.1}%  {}", name, percent, path.display());
     }
     println!("\n{} arquivo(s) detectado(s) em {}", files.len(), root);
 }

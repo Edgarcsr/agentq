@@ -51,9 +51,9 @@ Example, scanning the test fixtures:
 
 ```sh
 $ cargo run -- tests/fixtures
-Go       tests/fixtures/gitignored/main.go
-JS/TS    tests/fixtures/js_with_node_modules/index.ts
-Python   tests/fixtures/python_project/pkg/app.py
+Go       33.3%  tests/fixtures/gitignored/main.go
+JS/TS    33.3%  tests/fixtures/js_with_node_modules/index.ts
+Python   33.3%  tests/fixtures/python_project/pkg/app.py
 
 3 arquivo(s) detectado(s) em tests/fixtures
 ```
