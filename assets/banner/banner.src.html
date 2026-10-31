@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>agentq</title>
+    <style>
+      /* SLOT: tokens. Replace with the product's real tokens (from its CSS/Tailwind theme). */
+      :root {
+        --bg: #0b0705;
+        --fg: #ffffff;
+        --muted: #b0a090;
+        --accent: #ff8a3d;
+        --app-bg: #100b08;
+        --app-panel: #17110c;
+        --app-border: #33271d;
+        --app-fg: #f5ece4;
+        --app-muted: #a08f80;
+        --app-accent: #ff8a3d;
+        --font: -apple-system, "SF Pro Display", "Helvetica Neue", Inter, system-ui, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+
+      /* SLOT: fonts. Add @font-face rules pointing at ./fonts/*.woff2 when the product has a font. */
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: transparent;
+        color: var(--fg);
+        font-family: var(--font);
+      }
+
+      .banner {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        /* Small rounded outer corners; the PNG is rendered with a transparent background. */
+        background: var(--bg);
+        border-radius: 16px;
+      }
+
+      #art {
+        position: absolute;
+        inset: 0;
+        /* Keep the art behind the text and mockup. */
+        z-index: 0;
+      }
+
+      .glow {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        /* SLOT: glow colors, usually the two middle stops of the art palette at low alpha. */
+        background:
+          radial-gradient(60% 80% at 85% 45%, rgb(200 80 10 / 0.45), transparent 70%),
+          radial-gradient(40% 50% at 95% 90%, rgb(220 140 20 / 0.25), transparent 70%);
+      }
+
+      .brand {
+        position: absolute;
+        z-index: 2;
+        top: 66px;
+        left: 66px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+
+      /* SLOT: logo. Replace .logo with the product's real logo (inline svg or <img>). */
+      .logo {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border-radius: 0;
+      }
+
+      .brand-name {
+        font-size: 44px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: var(--accent);
+      }
+
+      .title {
+        position: absolute;
+        z-index: 2;
+        top: 138px;
+        left: 66px;
+        width: 760px;
+        font-size: 68px;
+        line-height: 1.12;
+        font-weight: 500;
+        letter-spacing: -0.03em;
+      }
+
+      /* The mockup frame is cropped by the banner's bottom edge on purpose. */
+      .mockup {
+        position: absolute;
+        z-index: 3;
+        left: 56px;
+        top: 356px;
+        /* Wider than the banner on purpose: the screen runs off the right edge, like the Fumadocs banner. */
+        width: 1180px;
+        height: 420px;
+        border-radius: 30px 0 0 0;
+        /* Translucent window outline, drawn over the backdrop. Only top and left are visible. */
+        border: 7px solid rgb(255 255 255 / 0.16);
+        border-bottom: 0;
+        border-right: 0;
+        background: var(--app-panel);
+        background-clip: padding-box;
+        padding: 4px 0 0 4px;
+        box-shadow:
+          0 0 0 1px rgb(255 255 255 / 0.07),
+          0 -20px 80px rgb(0 0 0 / 0.55);
+        font-size: 13px;
+        color: var(--app-fg);
+      }
+
+      /* SLOT: mockup. Everything inside .app is a placeholder. Recreate the product's real screen
+         (sidebar, header, main content, optional right rail) from its components and tokens. */
+      .app {
+        height: 100%;
+        background: var(--app-bg);
+        border-radius: 18px 0 0 0;
+      }
+
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--app-border);
+        color: var(--app-muted);
+        font-size: 13px;
+      }
+
+      .bar i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--app-border);
+      }
+
+      .bar span {
+        margin-left: 10px;
+      }
+
+      .term {
+        font-family: var(--mono);
+        font-size: 17px;
+        line-height: 1.7;
+        padding: 18px 24px;
+        color: var(--app-fg);
+        white-space: pre;
+      }
+
+      .term .m {
+        color: var(--app-muted);
+      }
+
+      .term .a {
+        color: var(--app-accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner">
+      <div class="glow"></div>
+      <canvas id="art" width="1200" height="630"></canvas>
+
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="#ff8a3d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div class="brand-name">agentq</div>
+      </div>
+      <h1 class="title">Spot quantum-vulnerable cryptography</h1>
+
+      <div class="mockup">
+        <div class="app">
+          <div class="bar"><i></i><i></i><i></i><span>agentq</span></div>
+          <pre class="term"><span class="m">$</span> cargo run -- tests/fixtures
+<span class="a">Go</span>       33.3%  tests/fixtures/gitignored/main.go
+<span class="a">JS/TS</span>    33.3%  tests/fixtures/js_with_node_modules/index.ts
+<span class="a">Python</span>   33.3%  tests/fixtures/python_project/pkg/app.py
+
+3 arquivo(s) detectado(s) em tests/fixtures</pre>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // SLOT: art config. Palette goes from shadow to highlight; match it to the product's brand.
+      // style: "sphere" (default) or "none". Not every banner needs the sphere: use "none" when the
+      // product has no natural accent glow or the mockup already carries the visual weight.
+      window.BANNER_ART = {
+        style: "shape",
+        shapePath: "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M7 11V7a5 5 0 0 1 10 0v4",
+        shapeStroke: 1.6,
+        shapeBase: 0.85,
+        shapeContrast: 0.3,
+        palette: ["#1a0800", "#7a2e00", "#ff7a1a", "#ffd2a1"],
+        cx: 1000,
+        cy: 230,
+        radius: 170,
+      };
+    </script>
+    <script src="./dither.js"></script>
+  </body>
+</html>

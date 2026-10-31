@@ -1,3 +1,14 @@
+<p align="center">
+  <img alt="agentq — Spot quantum-vulnerable cryptography" src="assets/banner/banner.png" />
+</p>
+
+<p align="center">
+  <img alt="Rust 2024" src="https://shieldcn.dev/badge/Rust-2024-ff8a3d.svg?variant=outline&amp;logo=rust" />
+  <img alt="ratatui 0.30" src="https://shieldcn.dev/badge/ratatui-0.30-ff8a3d.svg?variant=outline" />
+  <img alt="crossterm 0.29" src="https://shieldcn.dev/badge/crossterm-0.29-ff8a3d.svg?variant=outline" />
+  <img alt="ignore 0.4" src="https://shieldcn.dev/badge/ignore-0.4-ff8a3d.svg?variant=outline" />
+</p>
+
 # agentq
 
 A proposed tool for analyzing source code, identifying uses of cryptography that may be vulnerable to quantum computing, and recommending post-quantum alternatives suited to the system's context.
