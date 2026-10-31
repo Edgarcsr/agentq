@@ -39,6 +39,27 @@ Research and develop a tool that helps identify uses of cryptography vulnerable 
 
 Recommendations should support the technical assessment of the team responsible for the system. The suitability of an alternative depends on the context, and the analysis does not guarantee security.
 
+## Current prototype
+
+The source file scanner is the first piece of the identification step. It walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.git`), and lists the files in the supported languages (Python, Java, JavaScript/TypeScript, and Go).
+
+```sh
+cargo run -- <directory>   # defaults to the current directory
+```
+
+Example, scanning the test fixtures:
+
+```sh
+$ cargo run -- tests/fixtures
+Go       tests/fixtures/gitignored/main.go
+JS/TS    tests/fixtures/js_with_node_modules/index.ts
+Python   tests/fixtures/python_project/pkg/app.py
+
+3 arquivo(s) detectado(s) em tests/fixtures
+```
+
+The `node_modules` directory in `js_with_node_modules` is skipped, so only its own `index.ts` is listed.
+
 ## Next steps
 
 - [ ] Review the literature on post-quantum cryptography and code analysis.
