@@ -2,7 +2,7 @@
 
 A proposed tool for analyzing source code, identifying uses of cryptography that may be vulnerable to quantum computing, and recommending post-quantum alternatives suited to the system's context.
 
-> **Status:** this project is in the concept and scope definition stage for an undergraduate final project (TCC, in Brazil). The features described below are planned and have not been implemented yet.
+> **Status:** research prototype for an undergraduate final project (TCC, in Brazil). It includes a source-file scanner and initial Python analysis components. Cryptographic coverage is limited; quantum-risk assessment and post-quantum recommendations are not implemented.
 
 ## About the project
 
@@ -41,7 +41,7 @@ Recommendations should support the technical assessment of the team responsible 
 
 ## Current prototype
 
-The source file scanner is the first piece of the identification step. It walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.git`), and lists the files in the supported languages (Python, Java, JavaScript/TypeScript, and Go).
+The source file scanner walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.git`), and lists files in the supported languages (Python, Java, JavaScript/TypeScript, and Go). The Python module includes a limited lexical crypto-API analyzer and a Tree-sitter syntax layer. The lexical analyzer remains an experimental baseline; neither component performs comprehensive cryptographic risk assessment or produces post-quantum recommendations.
 
 ```sh
 cargo run -- <directory>   # defaults to the current directory
