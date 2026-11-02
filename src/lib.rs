@@ -2,6 +2,7 @@ pub mod analysis;
 pub mod analyzer;
 pub mod assess;
 pub mod detect;
+pub mod eval;
 pub mod finding;
 pub mod knowledge;
 pub mod modules;
