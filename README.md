@@ -52,41 +52,67 @@ Recommendations should support the technical assessment of the team responsible 
 
 ## Current prototype
 
-The prototype covers the first two steps of the workflow for **JavaScript and TypeScript (Node.js)** projects.
+The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)** projects. Python, Java, and Go files are listed by the scanner but not analyzed yet.
 
-1. **Scanner.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.git`), and lists files in the supported languages (Python, Java, JavaScript/TypeScript, and Go).
-2. **Detector.** Parses each JS/TS file with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it is a literal. It follows imports, destructuring, aliases, and constants, so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments or strings are not.
+1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages.
+2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
+3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from other uses in the same file, and the confidence of such findings drops to `medium`.
+4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml)) that records the quantum attack (Shor or Grover), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them.
+5. **Report.** Text, JSON, or Markdown, most urgent first.
 
-Recognized APIs: Node.js `crypto`, Web Crypto (`crypto.subtle`), `jsonwebtoken`, `jose`, `node-forge`, `node-rsa`, `elliptic`, `tweetnacl`, `@noble/curves`, `@noble/ed25519`, `@noble/secp256k1`, and `crypto-js`.
-
-Algorithms are described in a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml)) that records the quantum attack that affects each one (Shor or Grover), its typical purposes, and the NIST post-quantum alternatives. The assessment and report steps do not use it yet.
+Recognized APIs: Node.js `crypto`, Web Crypto (`crypto.subtle`), `jsonwebtoken`, `jose`, `node-forge`, `node-rsa`, `elliptic`, `tweetnacl`, `@noble/curves`, `@noble/ed25519`, `@noble/secp256k1`, `crypto-js`, `jsrsasign`, `openpgp`, and `libsodium`. Post-quantum usage (`ml-kem`, `ml-dsa`, `slh-dsa` in `node:crypto` and `@noble/post-quantum`) is reported as safe.
 
 ```sh
-cargo run -- <directory>   # defaults to the current directory
+cargo run -- <directory>                      # defaults to the current directory
+cargo run -- <directory> --format markdown    # text (default), json, or markdown
+cargo run -- <directory> -o report.json -f json
+cargo run -- <directory> --hide-safe --min-confidence medium
 ```
 
-Example, scanning the test fixtures:
+Example, scanning a test fixture:
 
-```sh
-$ cargo run -- tests/fixtures/node_crypto
+```text
+agentq report for tests/fixtures/node_crypto
+knowledge base: 2026-11
+
+Files
 JS/TS    100.0%  tests/fixtures/node_crypto/server.js
 JS/TS    100.0%  tests/fixtures/node_crypto/session.ts
 
-2 arquivo(s) detectado(s) em tests/fixtures/node_crypto
+2 file(s) detected in tests/fixtures/node_crypto
 
-5 cryptographic use(s) found
-  rsa       unknown      2048-bit tests/fixtures/node_crypto/server.js:3:35  crypto.generateKeyPairSync('rsa', {
-  sha1      hash                  tests/fixtures/node_crypto/server.js:8:10  crypto.createHash('sha1')
-  rsa       encryption            tests/fixtures/node_crypto/server.js:12:10  crypto.publicEncrypt(publicKey, buffer)
-  ecdh      key exchange 256-bit  tests/fixtures/node_crypto/session.ts:5:16  createECDH('prime256v1')
-  aes-256   encryption   256-bit  tests/fixtures/node_crypto/session.ts:8:18  createCipheriv('aes-256-gcm', secret, randomBytes(12))
+Summary
+  4 cryptographic use(s) found
+     3 broken
+     1 weakened
+     3 need urgent attention
+
+Findings (most urgent first)
+
+[HIGH] RSA (encryption) 2048-bit tests/fixtures/node_crypto/server.js:3:35  (confidence: Medium)
+    crypto.generateKeyPairSync('rsa', {
+    Why: Security rests on integer factoring, which Shor's algorithm solves in polynomial time on a large enough quantum computer. Larger keys do not help. Traffic or data protected this way can be recorded today and decrypted once a quantum computer exists (harvest now, decrypt later).
+    Replace with: ML-KEM (CRYSTALS-Kyber)
+    Implementations: @noble/post-quantum (JavaScript), liboqs and liboqs-python, OpenSSL 3.5 or later, Bouncy Castle 1.79 or later (Java), crypto/mlkem (Go 1.24 or later)
 ```
+
+### Evaluation
+
+`cargo run --bin eval` scores the analyzer on an annotated corpus (`eval/corpus/node`, markers like `// @expect md5:hash`) and compares it with a keyword search, the way a developer would use `grep`. Current results, also saved in [`eval/results/node.md`](eval/results/node.md):
+
+| | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: |
+| agentq | 100.0% | 95.8% | 97.9% |
+| keyword search | 65.2% | 62.5% | 63.8% |
+
+The corpus was written by the authors of the analyzer, so these numbers show regressions and the gap to a naive search, not performance on unseen code. Validation on real repositories is still to do.
 
 ### Known limitations
 
-- Name resolution is file-local and ignores scoping; algorithms chosen at runtime (configuration, function parameters) are not reported.
-- Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked, so the purpose of RSA and EC key generation stays `unknown` for now.
-- Only JavaScript and TypeScript are analyzed; Python, Java, and Go files are listed but not inspected.
+- Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
+- Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
+- Purpose inference works per file, so unrelated keys in one file can influence each other.
+- Only JavaScript and TypeScript are analyzed.
 
 ## Next steps
 
@@ -94,9 +120,11 @@ JS/TS    100.0%  tests/fixtures/node_crypto/session.ts
 - [ ] Define the research problem and evaluation criteria for the final project.
 - [x] Define the languages, libraries, and algorithms within the initial scope (JS/TS first).
 - [x] Choose the analysis approach and technologies for the prototype (tree-sitter and a rule-based knowledge base).
-- [ ] Infer the purpose of each use, then assess risk and recommend post-quantum alternatives.
-- [ ] Produce the report (text, JSON, Markdown).
-- [ ] Develop a prototype and evaluate it on test projects.
+- [x] Infer the purpose of each use, assess risk, and recommend post-quantum alternatives.
+- [x] Produce the report (text, JSON, Markdown).
+- [x] Evaluate the prototype on an annotated synthetic corpus.
+- [ ] Evaluate it on real open-source Node repositories, with manual validation.
+- [ ] Add analyzers for Python, Java, and Go.
 - [ ] Document the results, limitations, and opportunities for future development.
 
 ## Team
