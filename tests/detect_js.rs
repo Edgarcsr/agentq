@@ -265,3 +265,77 @@ fn every_detected_algorithm_exists_in_the_knowledge_base() {
         );
     }
 }
+
+#[test]
+fn web_crypto_rsa_and_elliptic_curve_keys() {
+    let source = "
+        await crypto.subtle.generateKey(
+          { name: 'RSA-OAEP', modulusLength: 4096, publicExponent: e, hash: 'SHA-256' },
+          true, ['encrypt']);
+        await crypto.subtle.generateKey(
+          { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, hash: 'SHA-256' }, true, ['sign']);
+        await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-384' }, true, ['sign']);
+        await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Encryption, Some(4096)),
+            found("rsa", Purpose::Signature, Some(2048)),
+            found("ecdsa", Purpose::Signature, Some(384)),
+            found("ecdh", Purpose::KeyExchange, Some(256)),
+        ]
+    );
+}
+
+#[test]
+fn web_crypto_through_global_object_and_node_exports() {
+    let source = "
+        import { webcrypto } from 'node:crypto';
+        import nodeCrypto from 'node:crypto';
+        globalThis.crypto.subtle.digest('SHA-1', data);
+        window.crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign']);
+        webcrypto.subtle.sign('RSA-PSS', key, data);
+        nodeCrypto.subtle.deriveBits({ name: 'X25519', public: k }, priv, 256);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("sha1", Purpose::Hash, None),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("rsa", Purpose::Signature, None),
+            found("x25519", Purpose::KeyExchange, Some(256)),
+        ]
+    );
+}
+
+#[test]
+fn web_crypto_reads_the_algorithm_from_the_right_argument() {
+    let source = "
+        const subtle = crypto.subtle;
+        await subtle.importKey('spki', der, { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt']);
+        await subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+        await subtle.wrapKey('raw', key, wrapKey, { name: 'RSA-OAEP' });
+        await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Encryption, None),
+            found("rsa", Purpose::Encryption, None),
+            found("aes-256", Purpose::Encryption, Some(256)),
+        ]
+    );
+}
+
+#[test]
+fn web_crypto_ignores_non_crypto_subtle_lookalikes() {
+    let source = "
+        const subtle = { sign: () => 1 };
+        subtle.sign('RSA-PSS');
+        crypto.getRandomValues(new Uint8Array(8));
+        crypto.randomUUID();
+        crypto.subtle.sign(algorithmFromConfig, key, data);
+    ";
+    assert_eq!(detect(source), vec![]);
+}

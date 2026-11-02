@@ -3,6 +3,7 @@
 
 mod names;
 mod node_crypto;
+mod webcrypto;
 
 use super::bindings::Resolved;
 use super::value::Value;
@@ -40,6 +41,7 @@ pub struct Detection {
 pub fn detect(site: &CallSite) -> Vec<Detection> {
     match site.resolved.module.as_str() {
         "crypto" => node_crypto::detect(site),
+        "webcrypto" => webcrypto::detect(site),
         _ => vec![],
     }
 }
