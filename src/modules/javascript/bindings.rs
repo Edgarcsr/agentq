@@ -47,17 +47,17 @@ impl Bindings {
             "import_statement" => bindings.collect_import(node, source),
             "variable_declarator" => bindings.collect_declarator(node, source),
             "assignment_expression" | "augmented_assignment_expression" => {
-                if let Some(left) = node.child_by_field_name("left") {
-                    if left.kind() == "identifier" {
-                        reassigned.insert(text(left, source));
-                    }
+                if let Some(left) = node.child_by_field_name("left")
+                    && left.kind() == "identifier"
+                {
+                    reassigned.insert(text(left, source));
                 }
             }
             "update_expression" => {
-                if let Some(argument) = node.child_by_field_name("argument") {
-                    if argument.kind() == "identifier" {
-                        reassigned.insert(text(argument, source));
-                    }
+                if let Some(argument) = node.child_by_field_name("argument")
+                    && argument.kind() == "identifier"
+                {
+                    reassigned.insert(text(argument, source));
                 }
             }
             _ => {}
