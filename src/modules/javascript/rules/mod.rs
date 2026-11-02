@@ -3,14 +3,12 @@
 
 mod crypto_js;
 mod jwt;
-mod names;
 mod node_crypto;
 mod public_key;
 mod webcrypto;
 
 use super::bindings::Resolved;
-use super::value::Value;
-use crate::finding::{Confidence, Purpose};
+use crate::modules::common::{Detection, Value};
 
 /// A call or `new` expression whose callee resolved to a known module.
 pub struct CallSite<'a> {
@@ -30,17 +28,6 @@ impl CallSite<'_> {
         static UNKNOWN: Value = Value::Unknown;
         self.args.get(index).unwrap_or(&UNKNOWN)
     }
-}
-
-/// What a rule recognized at a call site.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Detection {
-    /// Knowledge base id.
-    pub algorithm: &'static str,
-    pub purpose: Purpose,
-    pub key_size: Option<u32>,
-    pub confidence: Confidence,
-    pub library: &'static str,
 }
 
 pub fn detect(site: &CallSite) -> Vec<Detection> {

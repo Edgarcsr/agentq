@@ -1,8 +1,9 @@
 //! Rules for `crypto-js`, which exposes hashes as `CryptoJS.SHA256(...)` or as
 //! one module per algorithm (`require('crypto-js/sha256')`).
 
-use super::{CallSite, Detection, names};
+use super::CallSite;
 use crate::finding::{Confidence, Purpose};
+use crate::modules::common::{Detection, names};
 
 const LIBRARY: &str = "crypto-js";
 

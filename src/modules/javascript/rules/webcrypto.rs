@@ -1,9 +1,10 @@
 //! Rules for the Web Crypto API (`crypto.subtle`), available in browsers,
 //! Node.js, Deno and edge runtimes.
 
-use super::{CallSite, Detection, names};
+use super::CallSite;
 use crate::finding::{Confidence, Purpose};
-use crate::modules::javascript::value::Value;
+use crate::modules::common::Value;
+use crate::modules::common::{Detection, names};
 
 const LIBRARY: &str = "webcrypto";
 

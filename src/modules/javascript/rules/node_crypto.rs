@@ -1,7 +1,8 @@
 //! Rules for the Node.js `crypto` module.
 
-use super::{CallSite, Detection, names};
+use super::CallSite;
 use crate::finding::{Confidence, Purpose};
+use crate::modules::common::{Detection, names};
 
 const LIBRARY: &str = "node:crypto";
 

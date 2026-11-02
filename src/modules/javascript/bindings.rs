@@ -1,5 +1,6 @@
 use super::syntax::{string_literal, text, unwrap_expression, walk};
-use super::value::{Value, eval};
+use super::value::eval;
+use crate::modules::common::Value;
 use std::collections::HashMap;
 use tree_sitter::{Node, Tree};
 

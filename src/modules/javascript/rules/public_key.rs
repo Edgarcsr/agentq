@@ -1,8 +1,9 @@
 //! Rules for public-key libraries: `node-forge`, `node-rsa`, `elliptic`,
 //! `tweetnacl` and the `@noble` family.
 
-use super::{CallSite, Detection, names};
+use super::CallSite;
 use crate::finding::{Confidence, Purpose};
+use crate::modules::common::{Detection, names};
 
 fn detection(
     library: &'static str,

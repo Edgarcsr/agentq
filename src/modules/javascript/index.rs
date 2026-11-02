@@ -1,10 +1,11 @@
 use super::bindings::Bindings;
 use super::rules::{self, CallSite};
 use super::syntax::{text, walk};
-use super::value::{Value, eval};
+use super::value::eval;
 use crate::analyzer::Analyzer;
 use crate::detect::Language;
 use crate::finding::Finding;
+use crate::modules::common::Value;
 use crate::parse::parse;
 use std::path::Path;
 use tree_sitter::Node;

@@ -2,9 +2,10 @@
 //!
 //! The signing algorithm is chosen with a JOSE `alg` identifier such as `RS256`.
 
-use super::{CallSite, Detection, names};
+use super::CallSite;
 use crate::finding::Confidence;
-use crate::modules::javascript::value::Value;
+use crate::modules::common::Value;
+use crate::modules::common::{Detection, names};
 
 fn detections(library: &'static str, algs: &[&Value]) -> Vec<Detection> {
     algs.iter()
