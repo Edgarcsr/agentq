@@ -24,10 +24,11 @@ impl Analyzer for JavaScriptAnalyzer {
         let mut findings = Vec::new();
 
         walk(tree.root_node(), |node| {
-            if node.kind() != "call_expression" {
-                return;
-            }
-            let callee = node.child_by_field_name("function");
+            let (callee, is_new) = match node.kind() {
+                "call_expression" => (node.child_by_field_name("function"), false),
+                "new_expression" => (node.child_by_field_name("constructor"), true),
+                _ => return,
+            };
             let Some(resolved) = callee.and_then(|callee| bindings.resolve(callee, source)) else {
                 return;
             };
@@ -35,6 +36,7 @@ impl Analyzer for JavaScriptAnalyzer {
             let site = CallSite {
                 resolved: &resolved,
                 args: &args,
+                is_new,
             };
             for detection in rules::detect(&site) {
                 let position = node.start_position();

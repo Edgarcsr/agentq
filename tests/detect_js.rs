@@ -381,3 +381,137 @@ fn jose_functions_take_the_algorithm_from_their_arguments() {
         ]
     );
 }
+
+#[test]
+fn node_forge_keys_and_hashes() {
+    let source = "
+        const forge = require('node-forge');
+        forge.pki.rsa.generateKeyPair({ bits: 2048 });
+        forge.pki.rsa.generateKeyPair(4096);
+        forge.pki.ed25519.generateKeyPair();
+        forge.md.sha1.create();
+        forge.md5.create();
+        forge.util.encode64(x);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Unknown, Some(2048)),
+            found("rsa", Purpose::Unknown, Some(4096)),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("sha1", Purpose::Hash, None),
+            found("md5", Purpose::Hash, None),
+        ]
+    );
+}
+
+#[test]
+fn constructors_of_node_rsa_and_elliptic() {
+    let source = "
+        import NodeRSA from 'node-rsa';
+        const EC = require('elliptic').ec;
+        const elliptic = require('elliptic');
+        new NodeRSA({ b: 1024 });
+        new EC('secp256k1');
+        new elliptic.ec('p384');
+        new elliptic.eddsa('ed25519');
+        NodeRSA({ b: 512 });
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Unknown, Some(1024)),
+            found("ecdsa", Purpose::Unknown, Some(256)),
+            found("ecdsa", Purpose::Unknown, Some(384)),
+            found("ed25519", Purpose::Signature, Some(256)),
+        ]
+    );
+}
+
+#[test]
+fn tweetnacl_signatures_and_boxes() {
+    let source = "
+        import nacl from 'tweetnacl';
+        nacl.sign.keyPair();
+        nacl.sign.detached(msg, sk);
+        nacl.box.keyPair();
+        nacl.box(msg, nonce, pk, sk);
+        nacl.randomBytes(24);
+        nacl.secretbox(msg, nonce, key);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("x25519", Purpose::KeyExchange, Some(256)),
+            found("x25519", Purpose::KeyExchange, Some(256)),
+        ]
+    );
+}
+
+#[test]
+fn noble_curves_packages() {
+    let source = "
+        import { secp256k1 } from '@noble/curves/secp256k1';
+        import { p256 } from '@noble/curves/nist';
+        import { x25519, ed25519 } from '@noble/curves/ed25519';
+        import * as ed from '@noble/ed25519';
+        import * as secp from '@noble/secp256k1';
+        secp256k1.sign(msg, priv);
+        p256.getSharedSecret(a, b);
+        x25519.getSharedSecret(a, b);
+        ed25519.verify(sig, msg, pub);
+        ed.signAsync(msg, priv);
+        secp.getSharedSecret(a, b);
+        secp256k1.utils.randomPrivateKey();
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("ecdsa", Purpose::Signature, Some(256)),
+            found("ecdh", Purpose::KeyExchange, Some(256)),
+            found("x25519", Purpose::KeyExchange, Some(256)),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("ecdh", Purpose::KeyExchange, Some(256)),
+        ]
+    );
+}
+
+#[test]
+fn library_detections_exist_in_the_knowledge_base() {
+    let source = "
+        const forge = require('node-forge');
+        const NodeRSA = require('node-rsa');
+        const elliptic = require('elliptic');
+        const nacl = require('tweetnacl');
+        const jwt = require('jsonwebtoken');
+        const { secp256k1 } = require('@noble/curves/secp256k1');
+        const { x25519 } = require('@noble/curves/ed25519');
+        forge.pki.rsa.generateKeyPair(2048);
+        forge.pki.ed25519.generateKeyPair();
+        forge.md.sha256.create();
+        new NodeRSA({ b: 2048 });
+        new elliptic.ec('p256');
+        new elliptic.eddsa('ed25519');
+        nacl.sign.keyPair();
+        nacl.box.keyPair();
+        secp256k1.sign(m, k);
+        secp256k1.getSharedSecret(a, b);
+        x25519.getSharedSecret(a, b);
+        jwt.sign(p, k, { algorithm: 'ES256' });
+        jwt.sign(p, k, { algorithm: 'RS256' });
+        jwt.sign(p, k, { algorithm: 'ES512' });
+    ";
+    let knowledge = agentq::knowledge::KnowledgeBase::embedded();
+    let findings = JavaScriptAnalyzer.analyze(Path::new("a.js"), source);
+    assert_eq!(findings.len(), 14);
+    for finding in findings {
+        assert!(
+            knowledge.get(&finding.algorithm).is_some(),
+            "{}",
+            finding.algorithm
+        );
+    }
+}

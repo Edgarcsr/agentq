@@ -4,16 +4,19 @@
 mod jwt;
 mod names;
 mod node_crypto;
+mod public_key;
 mod webcrypto;
 
 use super::bindings::Resolved;
 use super::value::Value;
 use crate::finding::{Confidence, Purpose};
 
-/// A call expression whose callee resolved to a known module.
+/// A call or `new` expression whose callee resolved to a known module.
 pub struct CallSite<'a> {
     pub resolved: &'a Resolved,
     pub args: &'a [Value],
+    /// Whether this is a `new X(...)` expression.
+    pub is_new: bool,
 }
 
 impl CallSite<'_> {
@@ -44,6 +47,8 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         "crypto" => node_crypto::detect(site),
         "webcrypto" => webcrypto::detect(site),
         "jsonwebtoken" | "jose" => jwt::detect(site),
+        "node-forge" | "node-rsa" | "elliptic" | "tweetnacl" => public_key::detect(site),
+        module if module.starts_with("@noble/") => public_key::detect(site),
         _ => vec![],
     }
 }
