@@ -60,6 +60,16 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
                 Some("ed25519") => vec![detection("ed25519", Purpose::Signature, Some(256))],
                 Some("x25519") => vec![detection("x25519", Purpose::KeyExchange, Some(256))],
                 Some("dh") => vec![detection("dh", Purpose::KeyExchange, None)],
+                // Post-quantum key types, e.g. `ml-kem-768` or `ml-dsa-65`.
+                Some(kind) if kind.starts_with("ml-kem-") => {
+                    vec![detection("ml-kem", Purpose::KeyExchange, None)]
+                }
+                Some(kind) if kind.starts_with("ml-dsa-") => {
+                    vec![detection("ml-dsa", Purpose::Signature, None)]
+                }
+                Some(kind) if kind.starts_with("slh-dsa-") => {
+                    vec![detection("slh-dsa", Purpose::Signature, None)]
+                }
                 _ => vec![],
             }
         }

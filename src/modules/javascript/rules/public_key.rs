@@ -117,6 +117,9 @@ fn tweetnacl(path: &[&str]) -> Vec<Detection> {
 /// `@noble/curves` (`secp256k1.sign`, `x25519.getSharedSecret`, ...) and the
 /// single-curve packages `@noble/ed25519` and `@noble/secp256k1`.
 fn noble(module: &str, path: &[&str]) -> Vec<Detection> {
+    if module.starts_with("@noble/post-quantum") {
+        return post_quantum(path);
+    }
     let library = if module.starts_with("@noble/curves") {
         "@noble/curves"
     } else if module == "@noble/ed25519" {
@@ -154,5 +157,23 @@ fn noble(module: &str, path: &[&str]) -> Vec<Detection> {
             vec![detection(library, "ecdh", Purpose::KeyExchange, bits)]
         }
         _ => vec![],
+    }
+}
+
+/// `@noble/post-quantum`: `ml_kem768.keygen()`, `ml_dsa65.sign(...)`, ...
+/// These are already post-quantum; reporting them shows what is migrated.
+fn post_quantum(path: &[&str]) -> Vec<Detection> {
+    const LIB: &str = "@noble/post-quantum";
+    let [scheme, method] = path else {
+        return vec![];
+    };
+    if scheme.starts_with("ml_kem") && matches!(*method, "keygen" | "encapsulate" | "decapsulate") {
+        vec![detection(LIB, "ml-kem", Purpose::KeyExchange, None)]
+    } else if scheme.starts_with("ml_dsa") && matches!(*method, "keygen" | "sign" | "verify") {
+        vec![detection(LIB, "ml-dsa", Purpose::Signature, None)]
+    } else if scheme.starts_with("slh_dsa") && matches!(*method, "keygen" | "sign" | "verify") {
+        vec![detection(LIB, "slh-dsa", Purpose::Signature, None)]
+    } else {
+        vec![]
     }
 }

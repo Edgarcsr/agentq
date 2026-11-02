@@ -678,3 +678,45 @@ fn a_parameter_named_like_the_module_is_not_the_module() {
     ";
     assert_eq!(detect(source), vec![found("sha1", Purpose::Hash, None)]);
 }
+
+#[test]
+fn post_quantum_usage_is_reported_as_safe_algorithms() {
+    let source = "
+        const crypto = require('node:crypto');
+        crypto.generateKeyPairSync('ml-kem-768');
+        crypto.generateKeyPairSync('ml-dsa-65');
+        crypto.generateKeyPairSync('slh-dsa-sha2-128s');
+        const { ml_kem768 } = require('@noble/post-quantum/ml-kem');
+        const { ml_dsa44 } = require('@noble/post-quantum/ml-dsa');
+        const { slh_dsa_sha2_128f } = require('@noble/post-quantum/slh-dsa');
+        ml_kem768.keygen();
+        ml_kem768.encapsulate(pk);
+        ml_dsa44.sign(msg, sk);
+        slh_dsa_sha2_128f.verify(sig, msg, pk);
+        ml_kem768.lengths;
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("ml-kem", Purpose::KeyExchange, None),
+            found("ml-dsa", Purpose::Signature, None),
+            found("slh-dsa", Purpose::Signature, None),
+            found("ml-kem", Purpose::KeyExchange, None),
+            found("ml-kem", Purpose::KeyExchange, None),
+            found("ml-dsa", Purpose::Signature, None),
+            found("slh-dsa", Purpose::Signature, None),
+        ]
+    );
+}
+
+#[test]
+fn post_quantum_usage_needs_no_migration() {
+    use agentq::assess::{Urgency, assess};
+    use agentq::knowledge::KnowledgeBase;
+    let findings = JavaScriptAnalyzer.analyze(
+        Path::new("a.js"),
+        "require('node:crypto').generateKeyPairSync('ml-kem-768');",
+    );
+    let assessment = assess(&findings[0], KnowledgeBase::embedded()).unwrap();
+    assert_eq!(assessment.urgency, Urgency::None);
+}
