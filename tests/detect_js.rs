@@ -720,3 +720,33 @@ fn post_quantum_usage_needs_no_migration() {
     let assessment = assess(&findings[0], KnowledgeBase::embedded()).unwrap();
     assert_eq!(assessment.urgency, Urgency::None);
 }
+
+#[test]
+fn jsrsasign_openpgp_and_libsodium() {
+    let source = "
+        const { KEYUTIL } = require('jsrsasign');
+        const openpgp = require('openpgp');
+        const sodium = require('libsodium-wrappers');
+        KEYUTIL.generateKeypair('RSA', 2048);
+        KEYUTIL.generateKeypair('EC', 'secp256r1');
+        openpgp.generateKey({ type: 'rsa', rsaBits: 4096, userIDs: [u] });
+        openpgp.generateKey({ type: 'ecc', curve: 'curve25519', userIDs: [u] });
+        openpgp.generateKey({ type: 'ecc', curve: 'nistP384', userIDs: [u] });
+        sodium.crypto_sign_keypair();
+        sodium.crypto_box_seal(msg, pk);
+        sodium.randombytes_buf(16);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Unknown, Some(2048)),
+            found("ecdsa", Purpose::Unknown, Some(256)),
+            found("rsa", Purpose::Unknown, Some(4096)),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("x25519", Purpose::KeyExchange, Some(256)),
+            found("ecdsa", Purpose::Unknown, Some(384)),
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("x25519", Purpose::KeyExchange, Some(256)),
+        ]
+    );
+}

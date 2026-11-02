@@ -35,7 +35,15 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         "crypto" => node_crypto::detect(site),
         "webcrypto" => webcrypto::detect(site),
         "jsonwebtoken" | "jose" => jwt::detect(site),
-        "node-forge" | "node-rsa" | "elliptic" | "tweetnacl" => public_key::detect(site),
+        "node-forge"
+        | "node-rsa"
+        | "elliptic"
+        | "tweetnacl"
+        | "jsrsasign"
+        | "openpgp"
+        | "libsodium-wrappers"
+        | "libsodium-wrappers-sumo"
+        | "sodium-native" => public_key::detect(site),
         module if module.starts_with("@noble/") => public_key::detect(site),
         module if module == "crypto-js" || module.starts_with("crypto-js/") => {
             crypto_js::detect(site)

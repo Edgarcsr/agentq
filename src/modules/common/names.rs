@@ -81,9 +81,9 @@ pub fn jose_algorithm(name: &str) -> Option<(&'static str, Purpose, Option<u32>)
 pub fn curve_bits(name: &str) -> Option<u32> {
     match name.to_ascii_lowercase().as_str() {
         "prime256v1" | "secp256r1" | "p-256" | "p256" | "secp256k1" | "curve25519" | "x25519"
-        | "ed25519" => Some(256),
-        "secp384r1" | "p-384" | "p384" => Some(384),
-        "secp521r1" | "p-521" | "p521" => Some(521),
+        | "ed25519" | "nistp256" => Some(256),
+        "secp384r1" | "p-384" | "p384" | "nistp384" => Some(384),
+        "secp521r1" | "p-521" | "p521" | "nistp521" => Some(521),
         _ => None,
     }
 }

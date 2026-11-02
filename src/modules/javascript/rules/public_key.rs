@@ -28,6 +28,9 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         "node-rsa" => node_rsa(site, &path),
         "elliptic" => elliptic(site, &path),
         "tweetnacl" => tweetnacl(&path),
+        "jsrsasign" => jsrsasign(site, &path),
+        "openpgp" => openpgp(site, &path),
+        "libsodium-wrappers" | "libsodium-wrappers-sumo" | "sodium-native" => libsodium(&path),
         _ => noble(module, &path),
     }
 }
@@ -175,5 +178,97 @@ fn post_quantum(path: &[&str]) -> Vec<Detection> {
         vec![detection(LIB, "slh-dsa", Purpose::Signature, None)]
     } else {
         vec![]
+    }
+}
+
+/// `KEYUTIL.generateKeypair('RSA', 2048)` and `KEYUTIL.generateKeypair('EC', 'secp256r1')`
+fn jsrsasign(site: &CallSite, path: &[&str]) -> Vec<Detection> {
+    const LIB: &str = "jsrsasign";
+    if path != ["KEYUTIL", "generateKeypair"] {
+        return vec![];
+    }
+    match site.arg(0).as_str() {
+        Some("RSA") => vec![detection(
+            LIB,
+            "rsa",
+            Purpose::Unknown,
+            site.arg(1).as_u32(),
+        )],
+        Some("EC") => {
+            let bits = site.arg(1).as_str().and_then(names::curve_bits);
+            vec![Detection {
+                confidence: Confidence::Medium,
+                ..detection(LIB, "ecdsa", Purpose::Unknown, bits)
+            }]
+        }
+        _ => vec![],
+    }
+}
+
+/// `openpgp.generateKey({ type: 'rsa', rsaBits: 4096 })` and `{ type: 'ecc', curve: ... }`.
+/// Curve25519 keys are an EdDSA signing key with an X25519 encryption subkey.
+fn openpgp(site: &CallSite, path: &[&str]) -> Vec<Detection> {
+    const LIB: &str = "openpgp";
+    if path != ["generateKey"] {
+        return vec![];
+    }
+    let options = site.arg(0);
+    let curve = options.get("curve").as_str();
+    // Without an explicit curve OpenPGP.js uses Curve25519.
+    let is_25519 = curve.is_none_or(|curve| curve.to_ascii_lowercase().contains("25519"));
+    match options.get("type").as_str() {
+        Some("rsa") => vec![detection(
+            LIB,
+            "rsa",
+            Purpose::Unknown,
+            options.get("rsaBits").as_u32(),
+        )],
+        Some("ecc") if is_25519 => vec![
+            detection(LIB, "ed25519", Purpose::Signature, Some(256)),
+            detection(LIB, "x25519", Purpose::KeyExchange, Some(256)),
+        ],
+        Some("ecc") => {
+            let bits = curve.and_then(names::curve_bits);
+            vec![Detection {
+                confidence: Confidence::Medium,
+                ..detection(LIB, "ecdsa", Purpose::Unknown, bits)
+            }]
+        }
+        Some("curve25519" | "curve25519Legacy" | "ed25519") => vec![
+            detection(LIB, "ed25519", Purpose::Signature, Some(256)),
+            detection(LIB, "x25519", Purpose::KeyExchange, Some(256)),
+        ],
+        _ => vec![],
+    }
+}
+
+/// libsodium signing (Ed25519) and public-key box / key exchange (X25519) functions.
+fn libsodium(path: &[&str]) -> Vec<Detection> {
+    const LIB: &str = "libsodium";
+    let [function] = path else {
+        return vec![];
+    };
+    match *function {
+        "crypto_sign_keypair"
+        | "crypto_sign_seed_keypair"
+        | "crypto_sign"
+        | "crypto_sign_detached"
+        | "crypto_sign_open"
+        | "crypto_sign_verify_detached" => {
+            vec![detection(LIB, "ed25519", Purpose::Signature, Some(256))]
+        }
+        "crypto_box_keypair"
+        | "crypto_box_seed_keypair"
+        | "crypto_box_easy"
+        | "crypto_box_open_easy"
+        | "crypto_box_seal"
+        | "crypto_box_seal_open"
+        | "crypto_scalarmult"
+        | "crypto_kx_keypair"
+        | "crypto_kx_client_session_keys"
+        | "crypto_kx_server_session_keys" => {
+            vec![detection(LIB, "x25519", Purpose::KeyExchange, Some(256))]
+        }
+        _ => vec![],
     }
 }
