@@ -1,5 +1,7 @@
 //! Maps algorithm names as spelled in code to knowledge base ids.
 
+use crate::finding::Purpose;
+
 /// Hash function named by `name` (`sha-256`, `RSA-SHA1`, `sha3-512`, ...).
 pub fn hash(name: &str) -> Option<&'static str> {
     let lower = name.to_ascii_lowercase();
@@ -55,6 +57,26 @@ pub fn aes_for_length(bits: u32) -> Option<&'static str> {
     }
 }
 
+/// Algorithm behind a JOSE `alg` identifier (RFC 7518), as `(id, purpose, key size)`.
+/// HMAC-based identifiers (`HS256`) and key wrapping with symmetric keys are not
+/// public-key cryptography and are ignored.
+pub fn jose_algorithm(name: &str) -> Option<(&'static str, Purpose, Option<u32>)> {
+    match name {
+        "RS256" | "RS384" | "RS512" | "PS256" | "PS384" | "PS512" => {
+            Some(("rsa", Purpose::Signature, None))
+        }
+        "ES256" | "ES256K" => Some(("ecdsa", Purpose::Signature, Some(256))),
+        "ES384" => Some(("ecdsa", Purpose::Signature, Some(384))),
+        "ES512" => Some(("ecdsa", Purpose::Signature, Some(521))),
+        "EdDSA" | "Ed25519" => Some(("ed25519", Purpose::Signature, Some(256))),
+        "RSA-OAEP" | "RSA-OAEP-256" | "RSA-OAEP-384" | "RSA-OAEP-512" | "RSA1_5" => {
+            Some(("rsa", Purpose::Encryption, None))
+        }
+        _ if name.starts_with("ECDH-ES") => Some(("ecdh", Purpose::KeyExchange, None)),
+        _ => None,
+    }
+}
+
 /// Field size in bits of a named elliptic curve.
 pub fn curve_bits(name: &str) -> Option<u32> {
     match name.to_ascii_lowercase().as_str() {
@@ -92,6 +114,28 @@ mod tests {
             Some(("chacha20", Some(256)))
         );
         assert_eq!(symmetric("rc4"), None);
+    }
+
+    #[test]
+    fn jose_identifiers() {
+        assert_eq!(
+            jose_algorithm("RS256"),
+            Some(("rsa", Purpose::Signature, None))
+        );
+        assert_eq!(
+            jose_algorithm("ES512"),
+            Some(("ecdsa", Purpose::Signature, Some(521)))
+        );
+        assert_eq!(
+            jose_algorithm("ECDH-ES+A256KW"),
+            Some(("ecdh", Purpose::KeyExchange, None))
+        );
+        assert_eq!(
+            jose_algorithm("RSA-OAEP-256"),
+            Some(("rsa", Purpose::Encryption, None))
+        );
+        assert_eq!(jose_algorithm("HS256"), None);
+        assert_eq!(jose_algorithm("none"), None);
     }
 
     #[test]

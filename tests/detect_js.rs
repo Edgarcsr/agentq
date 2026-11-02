@@ -339,3 +339,45 @@ fn web_crypto_ignores_non_crypto_subtle_lookalikes() {
     ";
     assert_eq!(detect(source), vec![]);
 }
+
+#[test]
+fn jsonwebtoken_algorithms_for_signing_and_verifying() {
+    let source = "
+        import jwt from 'jsonwebtoken';
+        jwt.sign(payload, privateKey, { algorithm: 'RS256', expiresIn: '1h' });
+        jwt.sign(payload, secret);
+        jwt.sign(payload, secret, { algorithm: 'HS256' });
+        jwt.verify(token, publicKey, { algorithms: ['ES384', 'PS256'] });
+        jwt.verify(token, secret);
+        jwt.decode(token);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Signature, None),
+            found("ecdsa", Purpose::Signature, Some(384)),
+            found("rsa", Purpose::Signature, None),
+        ]
+    );
+}
+
+#[test]
+fn jose_functions_take_the_algorithm_from_their_arguments() {
+    let source = "
+        import { generateKeyPair, importSPKI, jwtVerify } from 'jose';
+        await generateKeyPair('EdDSA');
+        await importSPKI(pem, 'RS256');
+        await generateKeyPair('ECDH-ES');
+        await jwtVerify(token, key, { algorithms: ['ES256'] });
+        await generateKeyPair('HS256');
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("ed25519", Purpose::Signature, Some(256)),
+            found("rsa", Purpose::Signature, None),
+            found("ecdh", Purpose::KeyExchange, None),
+            found("ecdsa", Purpose::Signature, Some(256)),
+        ]
+    );
+}

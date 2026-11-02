@@ -8,6 +8,7 @@ pub enum Value {
     Str(String),
     Num(f64),
     Object(Vec<(String, Value)>),
+    Array(Vec<Value>),
     /// Anything that cannot be determined statically.
     Unknown,
 }
@@ -26,6 +27,14 @@ impl Value {
                 Some(*n as u32)
             }
             _ => None,
+        }
+    }
+
+    /// Elements of an array value.
+    pub fn as_array(&self) -> &[Value] {
+        match self {
+            Value::Array(items) => items,
+            _ => &[],
         }
     }
 
@@ -63,6 +72,15 @@ pub fn eval(node: Node, source: &str, consts: &HashMap<String, Value>) -> Value 
             .get(text(node, source))
             .cloned()
             .unwrap_or(Value::Unknown),
+        "array" => {
+            let mut cursor = node.walk();
+            let items = node
+                .named_children(&mut cursor)
+                .filter(|child| child.kind() != "comment")
+                .map(|child| eval(child, source, consts))
+                .collect();
+            Value::Array(items)
+        }
         "object" => {
             let mut pairs = Vec::new();
             let mut cursor = node.walk();

@@ -1,6 +1,7 @@
 //! Rules that recognize cryptographic calls once the callee has been resolved
 //! to a module and property path.
 
+mod jwt;
 mod names;
 mod node_crypto;
 mod webcrypto;
@@ -42,6 +43,7 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
     match site.resolved.module.as_str() {
         "crypto" => node_crypto::detect(site),
         "webcrypto" => webcrypto::detect(site),
+        "jsonwebtoken" | "jose" => jwt::detect(site),
         _ => vec![],
     }
 }
