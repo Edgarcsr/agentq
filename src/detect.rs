@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 /// Directories that hold dependencies or build output and are never scanned.
 const SKIPPED_DIRS: &[&str] = &["node_modules", "vendor", "target", "build", "dist", ".git"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     Python,
     Java,
@@ -20,6 +20,16 @@ impl Language {
             "js" | "jsx" | "mjs" | "ts" | "tsx" => Some(Language::JavaScriptTypeScript),
             "go" => Some(Language::Go),
             _ => None,
+        }
+    }
+
+    /// Short human-readable name used in the CLI output.
+    pub fn label(self) -> &'static str {
+        match self {
+            Language::Python => "Python",
+            Language::Java => "Java",
+            Language::JavaScriptTypeScript => "JS/TS",
+            Language::Go => "Go",
         }
     }
 }

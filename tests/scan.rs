@@ -74,3 +74,23 @@ fn javascript_and_typescript_share_one_language() {
         Some(Language::JavaScriptTypeScript)
     );
 }
+
+#[test]
+fn percentage_is_the_share_of_files_per_language() {
+    let root = fixture("mixed_languages");
+    let output = Command::new(env!("CARGO_BIN_EXE_quantum-agent"))
+        .arg(&root)
+        .output()
+        .expect("failed to run quantum-agent");
+    let stdout = String::from_utf8(output.stdout).expect("output is not UTF-8");
+
+    let percent_of = |label: &str| -> Vec<String> {
+        stdout
+            .lines()
+            .filter(|line| line.starts_with(label))
+            .map(|line| line.split_whitespace().nth(1).unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(percent_of("Python"), vec!["75.0%", "75.0%", "75.0%"]);
+    assert_eq!(percent_of("Go"), vec!["25.0%"]);
+}
