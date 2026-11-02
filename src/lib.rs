@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod analyzer;
+pub mod assess;
 pub mod detect;
 pub mod finding;
 pub mod knowledge;

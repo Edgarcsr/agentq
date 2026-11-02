@@ -249,6 +249,7 @@ pqc_alternatives = []
 rationale = "Lattice-based key encapsulation based on module learning with errors, with no known efficient quantum attack."
 notes = "Parameter sets ML-KEM-512, 768 and 1024. ML-KEM-768 has 1184-byte public keys and 1088-byte ciphertexts. Use hybrid with X25519 during the transition."
 references = ["NIST FIPS 203"]
+implementations = ["@noble/post-quantum (JavaScript)", "liboqs and liboqs-python", "OpenSSL 3.5 or later", "Bouncy Castle 1.79 or later (Java)", "crypto/mlkem (Go 1.24 or later)"]
 
 [[algorithm]]
 id = "ml-dsa"
@@ -261,6 +262,7 @@ pqc_alternatives = []
 rationale = "Lattice-based signature scheme with no known efficient quantum attack."
 notes = "Parameter sets ML-DSA-44, 65 and 87. ML-DSA-65 has 1952-byte public keys and 3309-byte signatures."
 references = ["NIST FIPS 204"]
+implementations = ["@noble/post-quantum (JavaScript)", "liboqs and liboqs-python", "OpenSSL 3.5 or later", "Bouncy Castle 1.79 or later (Java)"]
 
 [[algorithm]]
 id = "slh-dsa"
@@ -273,3 +275,4 @@ pqc_alternatives = []
 rationale = "Stateless hash-based signature scheme whose security relies only on hash function properties."
 notes = "Tiny keys (32 bytes at 128-bit security) but large signatures (7856 bytes for the 128s set) and slow signing. A conservative backup to lattice schemes."
 references = ["NIST FIPS 205"]
+implementations = ["@noble/post-quantum (JavaScript)", "liboqs and liboqs-python", "OpenSSL 3.5 or later", "Bouncy Castle 1.79 or later (Java)"]

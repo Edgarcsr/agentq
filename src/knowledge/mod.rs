@@ -2,7 +2,7 @@
 //! them and which post-quantum algorithms can replace them.
 
 use crate::finding::{Purpose, QuantumRisk};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
@@ -17,7 +17,7 @@ pub enum Family {
     Pqc,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Attack {
     Shor,
@@ -39,6 +39,9 @@ pub struct Algorithm {
     pub rationale: String,
     pub notes: String,
     pub references: Vec<String>,
+    /// Libraries or platforms that implement this algorithm (post-quantum entries only).
+    #[serde(default)]
+    pub implementations: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,6 +145,14 @@ mod tests {
             assert_eq!(algorithm.family, Family::Pqc, "{id}");
             assert_eq!(algorithm.risk, QuantumRisk::Safe, "{id}");
             assert!(algorithm.pqc_alternatives.is_empty(), "{id}");
+        }
+    }
+
+    #[test]
+    fn post_quantum_algorithms_list_implementations() {
+        let kb = KnowledgeBase::embedded();
+        for id in ["ml-kem", "ml-dsa", "slh-dsa"] {
+            assert!(!kb.get(id).unwrap().implementations.is_empty(), "{id}");
         }
     }
 
