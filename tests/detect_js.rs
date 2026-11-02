@@ -515,3 +515,32 @@ fn library_detections_exist_in_the_knowledge_base() {
         );
     }
 }
+
+#[test]
+fn crypto_js_hashes_and_triple_des() {
+    let source = "
+        import CryptoJS from 'crypto-js';
+        import { SHA1, HmacSHA256 } from 'crypto-js';
+        import md5 from 'crypto-js/md5';
+        const sha512 = require('crypto-js/sha512');
+        CryptoJS.MD5(message);
+        SHA1(message);
+        HmacSHA256(message, key);
+        md5(message);
+        sha512(message);
+        CryptoJS.TripleDES.encrypt(message, key);
+        CryptoJS.enc.Base64.stringify(x);
+        CryptoJS.lib.WordArray.random(16);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("md5", Purpose::Hash, None),
+            found("sha1", Purpose::Hash, None),
+            found("sha2-256", Purpose::Hash, None),
+            found("md5", Purpose::Hash, None),
+            found("sha2-512", Purpose::Hash, None),
+            found("3des", Purpose::Encryption, None),
+        ]
+    );
+}

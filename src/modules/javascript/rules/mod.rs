@@ -1,6 +1,7 @@
 //! Rules that recognize cryptographic calls once the callee has been resolved
 //! to a module and property path.
 
+mod crypto_js;
 mod jwt;
 mod names;
 mod node_crypto;
@@ -49,6 +50,9 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         "jsonwebtoken" | "jose" => jwt::detect(site),
         "node-forge" | "node-rsa" | "elliptic" | "tweetnacl" => public_key::detect(site),
         module if module.starts_with("@noble/") => public_key::detect(site),
+        module if module == "crypto-js" || module.starts_with("crypto-js/") => {
+            crypto_js::detect(site)
+        }
         _ => vec![],
     }
 }
