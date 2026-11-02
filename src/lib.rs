@@ -7,3 +7,4 @@ pub mod knowledge;
 pub mod modules;
 pub mod parse;
 pub mod purpose;
+pub mod report;
