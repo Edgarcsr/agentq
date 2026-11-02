@@ -1,6 +1,7 @@
 //! Types and helpers shared by the per-language analyzers.
 
 pub mod names;
+pub mod syntax;
 
 use crate::finding::{Confidence, Purpose};
 

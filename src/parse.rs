@@ -6,7 +6,7 @@ use tree_sitter::{Parser, Tree};
 ///
 /// `path` selects between the JavaScript, TypeScript and TSX grammars, which
 /// all map to [`Language::JavaScriptTypeScript`]. Returns `None` when the
-/// language has no grammar wired up yet or the parser gives up.
+/// parser gives up.
 pub fn parse(language: Language, path: &Path, source: &str) -> Option<Tree> {
     let mut parser = Parser::new();
     match language {
@@ -18,7 +18,13 @@ pub fn parse(language: Language, path: &Path, source: &str) -> Option<Tree> {
             };
             parser.set_language(&grammar.into()).ok()?;
         }
-        Language::Python | Language::Java | Language::Go => return None,
+        Language::Python => parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .ok()?,
+        Language::Java => parser
+            .set_language(&tree_sitter_java::LANGUAGE.into())
+            .ok()?,
+        Language::Go => parser.set_language(&tree_sitter_go::LANGUAGE.into()).ok()?,
     }
     parser.parse(source, None)
 }
@@ -63,7 +69,27 @@ mod tests {
     }
 
     #[test]
-    fn languages_without_a_grammar_return_none() {
-        assert!(parse(Language::Python, Path::new("a.py"), "x = 1").is_none());
+    fn parses_python_java_and_go() {
+        let cases = [
+            (
+                Language::Python,
+                "a.py",
+                "import hashlib\nhashlib.md5(b'x')\n",
+            ),
+            (
+                Language::Java,
+                "A.java",
+                "class A { void f() { MessageDigest.getInstance(\"MD5\"); } }",
+            ),
+            (
+                Language::Go,
+                "a.go",
+                "package main\nimport \"crypto/md5\"\nfunc main() { md5.New() }\n",
+            ),
+        ];
+        for (language, file, source) in cases {
+            let tree = parse(language, Path::new(file), source).unwrap();
+            assert!(!tree.root_node().has_error(), "{file}");
+        }
     }
 }
