@@ -68,7 +68,7 @@ fn elliptic_curve_keys_report_curve_size() {
     assert_eq!(
         detect(source),
         vec![
-            found("ecdsa", Purpose::Unknown, Some(384)),
+            found("ecdh", Purpose::KeyExchange, Some(384)),
             found("ecdh", Purpose::KeyExchange, Some(256)),
         ]
     );
@@ -543,4 +543,65 @@ fn crypto_js_hashes_and_triple_des() {
             found("3des", Purpose::Encryption, None),
         ]
     );
+}
+
+#[test]
+fn rsa_key_purpose_is_inferred_from_the_rest_of_the_file() {
+    let encrypting = "
+        const crypto = require('crypto');
+        const { publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+        crypto.publicEncrypt(publicKey, data);
+    ";
+    assert_eq!(
+        detect(encrypting),
+        vec![
+            found("rsa", Purpose::Encryption, Some(2048)),
+            found("rsa", Purpose::Encryption, None),
+        ]
+    );
+
+    let signing = "
+        const crypto = require('crypto');
+        const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+        crypto.sign('sha256', data, privateKey);
+    ";
+    assert_eq!(
+        detect(signing),
+        vec![found("rsa", Purpose::Signature, Some(2048))]
+    );
+}
+
+#[test]
+fn ec_key_purpose_and_algorithm_are_inferred() {
+    let key_exchange = "
+        const crypto = require('crypto');
+        const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        crypto.diffieHellman({ privateKey, publicKey });
+    ";
+    assert_eq!(
+        detect(key_exchange),
+        vec![found("ecdh", Purpose::KeyExchange, Some(256))]
+    );
+
+    let signing = "
+        const crypto = require('crypto');
+        const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        crypto.createSign('SHA256').sign(privateKey);
+    ";
+    assert_eq!(
+        detect(signing),
+        vec![found("ecdsa", Purpose::Signature, Some(256))]
+    );
+}
+
+#[test]
+fn inferred_purpose_lowers_confidence_to_medium() {
+    let findings = JavaScriptAnalyzer.analyze(
+        Path::new("a.js"),
+        "const c = require('crypto');
+         c.generateKeyPairSync('rsa', { modulusLength: 2048 });
+         c.publicEncrypt(k, b);",
+    );
+    assert_eq!(findings[0].confidence, Confidence::Medium);
+    assert_eq!(findings[1].confidence, Confidence::High);
 }

@@ -43,3 +43,11 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         _ => vec![],
     }
 }
+
+/// Purpose implied by a call that creates no finding by itself.
+pub fn hint(site: &CallSite) -> Option<crate::finding::Purpose> {
+    match site.resolved.module.as_str() {
+        "crypto" => node_crypto::hint(site),
+        _ => None,
+    }
+}

@@ -28,7 +28,7 @@ fn reports_cryptographic_uses_with_location() {
 
     // Sorted by file, then position: server.js first, then session.ts.
     let expected = [
-        ["rsa", "unknown", "2048-bit", "server.js:3:35"],
+        ["rsa", "encryption", "2048-bit", "server.js:3:35"],
         ["sha1", "hash", "", "server.js:8:10"],
         ["rsa", "encryption", "", "server.js:12:10"],
         ["ecdh", "key exchange", "256-bit", "session.ts:5:16"],

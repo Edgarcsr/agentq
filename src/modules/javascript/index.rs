@@ -7,6 +7,7 @@ use crate::detect::Language;
 use crate::finding::Finding;
 use crate::modules::common::Value;
 use crate::parse::parse;
+use crate::purpose::infer_purposes;
 use std::path::Path;
 use tree_sitter::Node;
 
@@ -23,6 +24,7 @@ impl Analyzer for JavaScriptAnalyzer {
         };
         let bindings = Bindings::collect(&tree, source);
         let mut findings = Vec::new();
+        let mut hints = Vec::new();
 
         walk(tree.root_node(), |node| {
             let (callee, is_new) = match node.kind() {
@@ -39,6 +41,7 @@ impl Analyzer for JavaScriptAnalyzer {
                 args: &args,
                 is_new,
             };
+            hints.extend(rules::hint(&site));
             for detection in rules::detect(&site) {
                 let position = node.start_position();
                 findings.push(Finding {
@@ -54,6 +57,7 @@ impl Analyzer for JavaScriptAnalyzer {
                 });
             }
         });
+        infer_purposes(&mut findings, &hints);
         findings
     }
 }

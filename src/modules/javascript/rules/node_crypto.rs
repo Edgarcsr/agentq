@@ -107,3 +107,16 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         _ => vec![],
     }
 }
+
+/// Purpose implied by calls that take a key but do not name its algorithm, such
+/// as `crypto.sign(null, data, key)`. Used to infer what generated keys are for.
+pub fn hint(site: &CallSite) -> Option<Purpose> {
+    let [function] = site.path() else {
+        return None;
+    };
+    match function.as_str() {
+        "sign" | "verify" | "createSign" | "createVerify" => Some(Purpose::Signature),
+        "diffieHellman" => Some(Purpose::KeyExchange),
+        _ => None,
+    }
+}
