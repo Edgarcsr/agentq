@@ -1,4 +1,4 @@
-use quantum_agent::detect::{Language, scan_source_files};
+use agentq::detect::{Language, scan_source_files};
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;

@@ -1,10 +1,9 @@
 [package]
-name = "quantum-agent"
+name = "agentq"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
-ferris-says = "0.3.2"
 ignore = "0.4.33"
 ratatui = "0.30.2"

@@ -1,4 +1,4 @@
-use quantum_agent::detect::Language;
+use agentq::detect::Language;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -12,13 +12,13 @@ fn fixture(name: &str) -> PathBuf {
 /// `(language label, path relative to the fixture root)`, sorted for stable comparison.
 fn run_program(name: &str) -> Vec<(String, String)> {
     let root = fixture(name);
-    let output = Command::new(env!("CARGO_BIN_EXE_quantum-agent"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
         .arg(&root)
         .output()
-        .expect("failed to run quantum-agent");
+        .expect("failed to run agentq");
     assert!(
         output.status.success(),
-        "quantum-agent failed on {}: {}",
+        "agentq failed on {}: {}",
         name,
         String::from_utf8_lossy(&output.stderr)
     );
@@ -78,10 +78,10 @@ fn javascript_and_typescript_share_one_language() {
 #[test]
 fn percentage_is_the_share_of_files_per_language() {
     let root = fixture("mixed_languages");
-    let output = Command::new(env!("CARGO_BIN_EXE_quantum-agent"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
         .arg(&root)
         .output()
-        .expect("failed to run quantum-agent");
+        .expect("failed to run agentq");
     let stdout = String::from_utf8(output.stdout).expect("output is not UTF-8");
 
     let percent_of = |label: &str| -> Vec<String> {
