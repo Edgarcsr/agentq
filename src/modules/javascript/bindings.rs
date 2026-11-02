@@ -1,7 +1,7 @@
 use super::syntax::{string_literal, text, unwrap_expression, walk};
 use super::value::eval;
 use crate::modules::common::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Tree};
 
 /// A name traced back to a module and a property path inside it.
@@ -23,6 +23,17 @@ pub struct Bindings {
     consts: HashMap<String, Value>,
 }
 
+/// Function-like nodes whose parameters shadow names from the enclosing scope.
+const FUNCTION_KINDS: &[&str] = &[
+    "function_declaration",
+    "function_expression",
+    "function",
+    "generator_function_declaration",
+    "generator_function",
+    "arrow_function",
+    "method_definition",
+];
+
 /// Pseudo-module for the global object (`globalThis`, `window`, `self`).
 const GLOBAL: &str = "global";
 /// Pseudo-module for the Web Crypto API.
@@ -31,11 +42,30 @@ pub const WEBCRYPTO: &str = "webcrypto";
 impl Bindings {
     pub fn collect(tree: &Tree, source: &str) -> Bindings {
         let mut bindings = Bindings::default();
+        let mut reassigned: HashSet<&str> = HashSet::new();
         walk(tree.root_node(), |node| match node.kind() {
             "import_statement" => bindings.collect_import(node, source),
             "variable_declarator" => bindings.collect_declarator(node, source),
+            "assignment_expression" | "augmented_assignment_expression" => {
+                if let Some(left) = node.child_by_field_name("left") {
+                    if left.kind() == "identifier" {
+                        reassigned.insert(text(left, source));
+                    }
+                }
+            }
+            "update_expression" => {
+                if let Some(argument) = node.child_by_field_name("argument") {
+                    if argument.kind() == "identifier" {
+                        reassigned.insert(text(argument, source));
+                    }
+                }
+            }
             _ => {}
         });
+        // A variable that is assigned again is not a constant.
+        bindings
+            .consts
+            .retain(|name, _| !reassigned.contains(name.as_str()));
         bindings
     }
 
@@ -209,6 +239,9 @@ impl Bindings {
         let resolved = match node.kind() {
             "identifier" => {
                 let name = text(node, source);
+                if is_parameter(node, name, source) {
+                    return None;
+                }
                 match self.names.get(name) {
                     Some(resolved) => resolved.clone(),
                     None => match name {
@@ -261,6 +294,37 @@ impl Bindings {
         };
         Some(normalize_webcrypto(resolved))
     }
+}
+
+/// Whether `name` is a parameter of a function enclosing `node`, in which case
+/// it refers to the argument and not to a module-level binding.
+fn is_parameter(node: Node, name: &str, source: &str) -> bool {
+    let declares = |parameters: Node| {
+        let mut found = false;
+        walk(parameters, |part| {
+            if matches!(
+                part.kind(),
+                "identifier" | "shorthand_property_identifier_pattern"
+            ) && text(part, source) == name
+            {
+                found = true;
+            }
+        });
+        found
+    };
+    let mut current = node.parent();
+    while let Some(scope) = current {
+        if FUNCTION_KINDS.contains(&scope.kind()) {
+            // Arrow functions with a single bare parameter use `parameter`.
+            for field in ["parameters", "parameter"] {
+                if scope.child_by_field_name(field).is_some_and(declares) {
+                    return true;
+                }
+            }
+        }
+        current = scope.parent();
+    }
+    false
 }
 
 /// `node:crypto` and `crypto` are the same module.
@@ -419,6 +483,50 @@ mod tests {
         assert_eq!(resolve_in("", "foo.bar"), None);
         assert_eq!(resolve_in("const x = require(name);", "x"), None);
         assert_eq!(resolve_in("const x = 5;", "x"), None);
+    }
+
+    #[test]
+    fn function_parameters_shadow_module_bindings() {
+        let src = "const crypto = require('crypto');
+                   function f(crypto) { return __probe_inside; }
+                   const g = (crypto) => crypto;
+                   const h = crypto => crypto;";
+        let tree = parse(Language::JavaScriptTypeScript, Path::new("t.js"), src).unwrap();
+        let bindings = Bindings::collect(&tree, src);
+        let mut results = Vec::new();
+        walk(tree.root_node(), |node| {
+            if node.kind() == "identifier" && text(node, src) == "crypto" {
+                results.push((
+                    node.start_position().row,
+                    bindings.resolve(node, src).is_some(),
+                ));
+            }
+        });
+        // Line 0 declares the real module; every use inside a function that takes
+        // `crypto` as a parameter must not resolve to it.
+        assert_eq!(
+            results,
+            vec![
+                (0, true),
+                (1, false),
+                (2, false),
+                (2, false),
+                (3, false),
+                (3, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn reassigned_variables_are_not_constants() {
+        let src = "let a = 'md5'; a = other; var b = 'rsa'; let n = 1; n++; const c = 'ec'; let d = 'x'; d += 'y';";
+        let tree = parse(Language::JavaScriptTypeScript, Path::new("t.js"), src).unwrap();
+        let bindings = Bindings::collect(&tree, src);
+        assert!(bindings.consts().get("a").is_none());
+        assert!(bindings.consts().get("n").is_none());
+        assert!(bindings.consts().get("d").is_none());
+        assert_eq!(bindings.consts()["b"], Value::Str("rsa".into()));
+        assert_eq!(bindings.consts()["c"], Value::Str("ec".into()));
     }
 
     #[test]

@@ -650,3 +650,31 @@ fn properties_of_constant_objects_are_read() {
         ]
     );
 }
+
+#[test]
+fn reassigned_variables_do_not_produce_findings() {
+    let source = "
+        const crypto = require('crypto');
+        let alg = 'md5';
+        alg = process.env.HASH;
+        crypto.createHash(alg);
+        var KEY_TYPE = 'rsa';
+        crypto.generateKeyPairSync(KEY_TYPE, { modulusLength: 2048 });
+    ";
+    assert_eq!(
+        detect(source),
+        vec![found("rsa", Purpose::Unknown, Some(2048))]
+    );
+}
+
+#[test]
+fn a_parameter_named_like_the_module_is_not_the_module() {
+    let source = "
+        const crypto = require('crypto');
+        function fake(crypto) { return crypto.createHash('md5'); }
+        const arrow = (crypto) => crypto.createHash('md5');
+        const single = crypto => crypto.createHash('md5');
+        crypto.createHash('sha1');
+    ";
+    assert_eq!(detect(source), vec![found("sha1", Purpose::Hash, None)]);
+}
