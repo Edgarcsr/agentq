@@ -12,7 +12,7 @@ pub fn parse(language: Language, path: &Path, source: &str) -> Option<Tree> {
     match language {
         Language::JavaScriptTypeScript => {
             let grammar = match path.extension().and_then(|ext| ext.to_str()) {
-                Some("ts") => tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
+                Some("ts" | "mts" | "cts") => tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
                 Some("tsx") => tree_sitter_typescript::LANGUAGE_TSX,
                 _ => tree_sitter_javascript::LANGUAGE,
             };
@@ -53,6 +53,14 @@ mod tests {
         let source = "const n: number = 1; interface A { b: string }";
         let tree = parse(JS_TS, Path::new("a.ts"), source).unwrap();
         assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn parses_module_specific_typescript_extensions() {
+        for file in ["a.mts", "a.cts"] {
+            let tree = parse(JS_TS, Path::new(file), "const n: number = 1;").unwrap();
+            assert!(!tree.root_node().has_error(), "{file}");
+        }
     }
 
     #[test]

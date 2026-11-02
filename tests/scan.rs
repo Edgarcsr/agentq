@@ -94,3 +94,26 @@ fn percentage_is_the_share_of_files_per_language() {
     assert_eq!(percent_of("Python"), vec!["75.0%", "75.0%", "75.0%"]);
     assert_eq!(percent_of("Go"), vec!["25.0%"]);
 }
+
+#[test]
+fn recognizes_commonjs_and_module_typescript_extensions() {
+    for extension in ["cjs", "mts", "cts"] {
+        assert_eq!(
+            Language::from_extension(extension),
+            Some(Language::JavaScriptTypeScript),
+            "{extension}"
+        );
+    }
+}
+
+#[test]
+fn skips_build_output_and_coverage_directories() {
+    assert_eq!(
+        run_program("node_extensions"),
+        vec![
+            expected("JS/TS", "legacy.cjs"),
+            expected("JS/TS", "typed.cts"),
+            expected("JS/TS", "typed.mts"),
+        ]
+    );
+}

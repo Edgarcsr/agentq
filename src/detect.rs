@@ -2,7 +2,18 @@ use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 
 /// Directories that hold dependencies or build output and are never scanned.
-const SKIPPED_DIRS: &[&str] = &["node_modules", "vendor", "target", "build", "dist", ".git"];
+const SKIPPED_DIRS: &[&str] = &[
+    "node_modules",
+    "vendor",
+    "target",
+    "build",
+    "dist",
+    ".git",
+    ".next",
+    ".nuxt",
+    "coverage",
+    "bower_components",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
@@ -17,7 +28,9 @@ impl Language {
         match extension {
             "py" => Some(Language::Python),
             "java" => Some(Language::Java),
-            "js" | "jsx" | "mjs" | "ts" | "tsx" => Some(Language::JavaScriptTypeScript),
+            "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts" => {
+                Some(Language::JavaScriptTypeScript)
+            }
             "go" => Some(Language::Go),
             _ => None,
         }
