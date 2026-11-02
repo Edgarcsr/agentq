@@ -2,6 +2,7 @@
 
 mod bindings;
 mod index;
+mod rules;
 mod syntax;
 mod value;
 
