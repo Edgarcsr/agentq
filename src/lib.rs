@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod analyzer;
 pub mod detect;
 pub mod finding;

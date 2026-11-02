@@ -1,3 +1,4 @@
+use agentq::analysis::analyze_files;
 use agentq::detect::{Language, scan_source_files};
 use std::collections::HashMap;
 use std::env;
@@ -24,4 +25,22 @@ fn main() {
         );
     }
     println!("\n{} arquivo(s) detectado(s) em {}", files.len(), root);
+
+    let findings = analyze_files(&files);
+    println!("\n{} cryptographic use(s) found", findings.len());
+    for finding in &findings {
+        let key_size = finding
+            .key_size
+            .map_or(String::new(), |bits| format!("{bits}-bit"));
+        println!(
+            "  {:<9} {:<12} {:<8} {}:{}:{}  {}",
+            finding.algorithm,
+            finding.purpose.label(),
+            key_size,
+            finding.file.display(),
+            finding.line,
+            finding.column,
+            finding.snippet
+        );
+    }
 }

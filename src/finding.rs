@@ -13,6 +13,18 @@ pub enum Purpose {
     Unknown,
 }
 
+impl Purpose {
+    pub fn label(self) -> &'static str {
+        match self {
+            Purpose::KeyExchange => "key exchange",
+            Purpose::Signature => "signature",
+            Purpose::Encryption => "encryption",
+            Purpose::Hash => "hash",
+            Purpose::Unknown => "unknown",
+        }
+    }
+}
+
 /// How a known quantum attack affects an algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
