@@ -1,0 +1,275 @@
+# Knowledge base mapping cryptographic algorithms to their exposure to quantum
+# attacks and to the post-quantum algorithms that can replace them.
+#
+# Sources: NIST FIPS 203/204/205, NIST IR 8547 (ipd), NIST SP 800-131A,
+# NSA CNSA 2.0. Review whenever those documents change.
+
+version = "2026-11"
+
+# ---------------------------------------------------------------------------
+# Public-key algorithms broken by Shor's algorithm
+# ---------------------------------------------------------------------------
+
+[[algorithm]]
+id = "rsa"
+name = "RSA"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["key_exchange", "signature", "encryption"]
+pqc_alternatives = ["ml-kem", "ml-dsa", "slh-dsa"]
+rationale = "Security rests on integer factoring, which Shor's algorithm solves in polynomial time on a large enough quantum computer. Larger keys do not help."
+notes = "RSA-2048 signatures are 256 bytes; ML-DSA-65 signatures are 3309 bytes and public keys 1952 bytes. For encryption or key transport use ML-KEM, for signatures ML-DSA or SLH-DSA."
+references = ["NIST IR 8547", "NIST FIPS 203", "NIST FIPS 204", "Gidney and Ekera 2021"]
+
+[[algorithm]]
+id = "dh"
+name = "Diffie-Hellman (finite field)"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["key_exchange"]
+pqc_alternatives = ["ml-kem"]
+rationale = "Security rests on the discrete logarithm problem in a finite field, which Shor's algorithm solves in polynomial time."
+notes = "Recorded traffic can be decrypted later (harvest now, decrypt later), so key exchange is the most urgent use to migrate. Prefer a hybrid with ML-KEM during the transition."
+references = ["NIST IR 8547", "NIST FIPS 203"]
+
+[[algorithm]]
+id = "ecdh"
+name = "ECDH (NIST curves)"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["key_exchange"]
+pqc_alternatives = ["ml-kem"]
+rationale = "Security rests on the elliptic curve discrete logarithm problem, which Shor's algorithm solves in polynomial time."
+notes = "Harvest-now-decrypt-later applies. A P-256 public key is 65 bytes; an ML-KEM-768 public key is 1184 bytes and its ciphertext 1088 bytes."
+references = ["NIST IR 8547", "NIST FIPS 203"]
+
+[[algorithm]]
+id = "x25519"
+name = "X25519"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["key_exchange"]
+pqc_alternatives = ["ml-kem"]
+rationale = "Curve25519 is an elliptic curve, so its discrete logarithm problem falls to Shor's algorithm."
+notes = "Hybrid X25519 plus ML-KEM-768 is already deployed in TLS and is the recommended transition path. X25519 public keys are 32 bytes."
+references = ["NIST IR 8547", "NIST FIPS 203"]
+
+[[algorithm]]
+id = "dsa"
+name = "DSA"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["signature"]
+pqc_alternatives = ["ml-dsa", "slh-dsa"]
+rationale = "Security rests on the discrete logarithm problem, which Shor's algorithm solves in polynomial time."
+notes = "DSA is also no longer approved for generating new signatures (FIPS 186-5), so migrate regardless of the quantum timeline."
+references = ["NIST IR 8547", "NIST FIPS 186-5", "NIST FIPS 204"]
+
+[[algorithm]]
+id = "ecdsa"
+name = "ECDSA"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["signature"]
+pqc_alternatives = ["ml-dsa", "slh-dsa"]
+rationale = "Security rests on the elliptic curve discrete logarithm problem. A quantum attacker can forge signatures once able to recover private keys."
+notes = "Signatures are about 64 bytes for P-256 versus 2420 to 4627 bytes for ML-DSA. Long-lived signatures (firmware, certificates) should migrate first."
+references = ["NIST IR 8547", "NIST FIPS 204", "NIST FIPS 205"]
+
+[[algorithm]]
+id = "ed25519"
+name = "Ed25519"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["signature"]
+pqc_alternatives = ["ml-dsa", "slh-dsa"]
+rationale = "Edwards-curve signatures rely on the elliptic curve discrete logarithm problem, which Shor's algorithm solves."
+notes = "Ed25519 signatures are 64 bytes and public keys 32 bytes; ML-DSA-44 uses 2420-byte signatures and 1312-byte public keys."
+references = ["NIST IR 8547", "NIST FIPS 204"]
+
+# ---------------------------------------------------------------------------
+# Symmetric ciphers (Grover's algorithm halves the effective key length)
+# ---------------------------------------------------------------------------
+
+[[algorithm]]
+id = "aes-128"
+name = "AES-128"
+family = "symmetric"
+risk = "weakened"
+attack = "grover"
+purposes = ["encryption"]
+pqc_alternatives = ["aes-256"]
+rationale = "Grover's algorithm reduces the work to recover a 128-bit key to about 2^64 quantum operations."
+notes = "NIST still treats AES-128 as acceptable (security category 1) because Grover parallelizes poorly, but CNSA 2.0 requires AES-256. Moving to AES-256 costs little."
+references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
+
+[[algorithm]]
+id = "aes-192"
+name = "AES-192"
+family = "symmetric"
+risk = "weakened"
+attack = "grover"
+purposes = ["encryption"]
+pqc_alternatives = ["aes-256"]
+rationale = "Grover's algorithm reduces the work to recover a 192-bit key to about 2^96 quantum operations."
+notes = "Meets NIST security category 3, but CNSA 2.0 requires AES-256."
+references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
+
+[[algorithm]]
+id = "aes-256"
+name = "AES-256"
+family = "symmetric"
+risk = "safe"
+attack = "grover"
+purposes = ["encryption"]
+pqc_alternatives = []
+rationale = "Even with Grover's algorithm, recovering a 256-bit key needs about 2^128 quantum operations."
+notes = "Considered quantum-resistant and required by CNSA 2.0."
+references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
+
+[[algorithm]]
+id = "chacha20"
+name = "ChaCha20"
+family = "symmetric"
+risk = "safe"
+attack = "grover"
+purposes = ["encryption"]
+pqc_alternatives = []
+rationale = "ChaCha20 uses a 256-bit key, which keeps about 128 bits of security against Grover's algorithm."
+notes = "No migration needed for quantum reasons."
+references = ["RFC 8439"]
+
+[[algorithm]]
+id = "3des"
+name = "Triple DES"
+family = "symmetric"
+risk = "weakened"
+attack = "grover"
+purposes = ["encryption"]
+pqc_alternatives = ["aes-256"]
+rationale = "The effective key length is at most 112 bits, and the 64-bit block size is already exploitable classically (Sweet32)."
+notes = "Disallowed by NIST for encryption after 2023. Replace with AES-256 regardless of quantum risk."
+references = ["NIST SP 800-131A"]
+
+# ---------------------------------------------------------------------------
+# Hash functions (Grover affects preimage resistance; collisions stay costly)
+# ---------------------------------------------------------------------------
+
+[[algorithm]]
+id = "md5"
+name = "MD5"
+family = "hash"
+risk = "weakened"
+attack = "grover"
+purposes = ["hash"]
+pqc_alternatives = ["sha2-256", "sha3"]
+rationale = "MD5 is broken classically (practical collisions) and its 128-bit output leaves little margin against Grover."
+notes = "Replace with SHA-256 or SHA-3 irrespective of quantum computing."
+references = ["NIST SP 800-131A"]
+
+[[algorithm]]
+id = "sha1"
+name = "SHA-1"
+family = "hash"
+risk = "weakened"
+attack = "grover"
+purposes = ["hash"]
+pqc_alternatives = ["sha2-256", "sha3"]
+rationale = "SHA-1 has practical collision attacks and a 160-bit output."
+notes = "NIST retires SHA-1 by 2030. Replace with SHA-256 or SHA-3."
+references = ["NIST SP 800-131A"]
+
+[[algorithm]]
+id = "sha2-256"
+name = "SHA-256"
+family = "hash"
+risk = "safe"
+attack = "grover"
+purposes = ["hash"]
+pqc_alternatives = []
+rationale = "Grover's algorithm leaves about 128 bits of preimage resistance, and quantum collision search is not cheaper than classical."
+notes = "CNSA 2.0 requires SHA-384 or SHA-512 for national security systems."
+references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
+
+[[algorithm]]
+id = "sha2-384"
+name = "SHA-384"
+family = "hash"
+risk = "safe"
+attack = "grover"
+purposes = ["hash"]
+pqc_alternatives = []
+rationale = "A 384-bit output keeps a comfortable margin against Grover's algorithm."
+notes = "Meets CNSA 2.0."
+references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
+
+[[algorithm]]
+id = "sha2-512"
+name = "SHA-512"
+family = "hash"
+risk = "safe"
+attack = "grover"
+purposes = ["hash"]
+pqc_alternatives = []
+rationale = "A 512-bit output keeps a comfortable margin against Grover's algorithm."
+notes = "Meets CNSA 2.0."
+references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
+
+[[algorithm]]
+id = "sha3"
+name = "SHA-3"
+family = "hash"
+risk = "safe"
+attack = "grover"
+purposes = ["hash"]
+pqc_alternatives = []
+rationale = "SHA-3 variants with outputs of 256 bits or more keep adequate margin against Grover's algorithm."
+notes = "No migration needed for quantum reasons."
+references = ["NIST FIPS 202"]
+
+# ---------------------------------------------------------------------------
+# Post-quantum algorithms standardized by NIST in 2024
+# ---------------------------------------------------------------------------
+
+[[algorithm]]
+id = "ml-kem"
+name = "ML-KEM (CRYSTALS-Kyber)"
+family = "pqc"
+risk = "safe"
+attack = "none"
+purposes = ["key_exchange", "encryption"]
+pqc_alternatives = []
+rationale = "Lattice-based key encapsulation based on module learning with errors, with no known efficient quantum attack."
+notes = "Parameter sets ML-KEM-512, 768 and 1024. ML-KEM-768 has 1184-byte public keys and 1088-byte ciphertexts. Use hybrid with X25519 during the transition."
+references = ["NIST FIPS 203"]
+
+[[algorithm]]
+id = "ml-dsa"
+name = "ML-DSA (CRYSTALS-Dilithium)"
+family = "pqc"
+risk = "safe"
+attack = "none"
+purposes = ["signature"]
+pqc_alternatives = []
+rationale = "Lattice-based signature scheme with no known efficient quantum attack."
+notes = "Parameter sets ML-DSA-44, 65 and 87. ML-DSA-65 has 1952-byte public keys and 3309-byte signatures."
+references = ["NIST FIPS 204"]
+
+[[algorithm]]
+id = "slh-dsa"
+name = "SLH-DSA (SPHINCS+)"
+family = "pqc"
+risk = "safe"
+attack = "none"
+purposes = ["signature"]
+pqc_alternatives = []
+rationale = "Stateless hash-based signature scheme whose security relies only on hash function properties."
+notes = "Tiny keys (32 bytes at 128-bit security) but large signatures (7856 bytes for the 128s set) and slow signing. A conservative backup to lattice schemes."
+references = ["NIST FIPS 205"]
