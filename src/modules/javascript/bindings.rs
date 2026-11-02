@@ -48,6 +48,7 @@ impl Bindings {
     }
 
     fn collect_import(&mut self, node: Node, source: &str) {
+        self.collect_import_require(node, source);
         let Some(module) = node
             .child_by_field_name("source")
             .and_then(|s| string_literal(s, source))
@@ -111,6 +112,35 @@ impl Bindings {
                     }
                     _ => {}
                 }
+            }
+        }
+    }
+
+    /// TypeScript's `import fs = require('fs')`.
+    fn collect_import_require(&mut self, node: Node, source: &str) {
+        let mut cursor = node.walk();
+        for clause in node.named_children(&mut cursor) {
+            if clause.kind() != "import_require_clause" {
+                continue;
+            }
+            let mut inner = clause.walk();
+            let mut name = None;
+            let mut module = None;
+            for part in clause.named_children(&mut inner) {
+                match part.kind() {
+                    "identifier" => name = Some(text(part, source)),
+                    "string" => module = string_literal(part, source),
+                    _ => {}
+                }
+            }
+            if let (Some(name), Some(module)) = (name, module) {
+                self.bind(
+                    name,
+                    Resolved {
+                        module: normalize_module(&module),
+                        path: vec![],
+                    },
+                );
             }
         }
     }
@@ -310,6 +340,15 @@ mod tests {
         assert_eq!(resolve_in(src, "b"), resolved("crypto", &[]));
         assert_eq!(resolve_in(src, "h"), resolved("crypto", &["createHash"]));
         assert_eq!(resolve_in(src, "sign"), resolved("crypto", &["sign"]));
+    }
+
+    #[test]
+    fn resolves_typescript_import_equals_require() {
+        let src = "import crypto = require('node:crypto');";
+        assert_eq!(
+            resolve_in(src, "crypto.createHash"),
+            resolved("crypto", &["createHash"])
+        );
     }
 
     #[test]

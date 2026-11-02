@@ -605,3 +605,9 @@ fn inferred_purpose_lowers_confidence_to_medium() {
     assert_eq!(findings[0].confidence, Confidence::Medium);
     assert_eq!(findings[1].confidence, Confidence::High);
 }
+
+#[test]
+fn typescript_import_equals_require_is_followed() {
+    let source = "import crypto = require('crypto');\ncrypto.createHash('md5');";
+    assert_eq!(detect(source), vec![found("md5", Purpose::Hash, None)]);
+}
