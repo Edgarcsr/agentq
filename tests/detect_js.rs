@@ -611,3 +611,42 @@ fn typescript_import_equals_require_is_followed() {
     let source = "import crypto = require('crypto');\ncrypto.createHash('md5');";
     assert_eq!(detect(source), vec![found("md5", Purpose::Hash, None)]);
 }
+
+#[test]
+fn string_concatenation_and_template_literals_are_evaluated() {
+    let source = "
+        const crypto = require('crypto');
+        const BITS = 256;
+        crypto.createCipheriv('aes-' + BITS + '-gcm', k, iv);
+        crypto.createCipheriv(`aes-${BITS}-cbc`, k, iv);
+        crypto.createCipheriv('aes-' + `${BITS / 2}`, k, iv);
+        crypto.createHash('sha' + 1);
+        crypto.createHash(prefix + '1');
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("aes-256", Purpose::Encryption, Some(256)),
+            found("aes-256", Purpose::Encryption, Some(256)),
+            found("sha1", Purpose::Hash, None),
+        ]
+    );
+}
+
+#[test]
+fn properties_of_constant_objects_are_read() {
+    let source = "
+        const crypto = require('crypto');
+        const config = { hash: 'sha1', keys: { type: 'rsa', bits: 2048 } };
+        crypto.createHash(config.hash);
+        crypto.generateKeyPairSync(config.keys.type, { modulusLength: config.keys.bits });
+        crypto.createHash(config.missing);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("sha1", Purpose::Hash, None),
+            found("rsa", Purpose::Unknown, Some(2048)),
+        ]
+    );
+}
