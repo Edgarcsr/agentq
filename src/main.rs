@@ -1,46 +1,111 @@
 use agentq::analysis::analyze_files;
-use agentq::detect::{Language, scan_source_files};
-use std::collections::HashMap;
-use std::env;
-use std::path::Path;
+use agentq::assess::assess_all;
+use agentq::detect::scan_source_files;
+use agentq::finding::{Confidence, QuantumRisk};
+use agentq::knowledge::KnowledgeBase;
+use agentq::report::{Format, Report, render};
+use clap::{Parser, ValueEnum};
+use std::fs;
+use std::path::PathBuf;
+use std::process::ExitCode;
 
-fn main() {
-    let root = env::args().nth(1).unwrap_or_else(|| String::from("."));
-    let mut files = scan_source_files(Path::new(&root));
+/// Find cryptography that quantum computers can break and suggest
+/// post-quantum alternatives.
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    /// Directory to analyze.
+    #[arg(default_value = ".")]
+    path: PathBuf,
+
+    /// Report format.
+    #[arg(short, long, value_enum, default_value_t = FormatArg::Text)]
+    format: FormatArg,
+
+    /// Write the report to a file instead of standard output.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Drop findings the analyzer is less sure about.
+    #[arg(long, value_enum, default_value_t = ConfidenceArg::Low)]
+    min_confidence: ConfidenceArg,
+
+    /// Leave out uses that are already safe against quantum attacks.
+    #[arg(long)]
+    hide_safe: bool,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum FormatArg {
+    Text,
+    Json,
+    #[value(alias = "md")]
+    Markdown,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ConfidenceArg {
+    Low,
+    Medium,
+    High,
+}
+
+impl From<FormatArg> for Format {
+    fn from(arg: FormatArg) -> Format {
+        match arg {
+            FormatArg::Text => Format::Text,
+            FormatArg::Json => Format::Json,
+            FormatArg::Markdown => Format::Markdown,
+        }
+    }
+}
+
+impl From<ConfidenceArg> for Confidence {
+    fn from(arg: ConfidenceArg) -> Confidence {
+        match arg {
+            ConfidenceArg::Low => Confidence::Low,
+            ConfidenceArg::Medium => Confidence::Medium,
+            ConfidenceArg::High => Confidence::High,
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    let args = Args::parse();
+    if !args.path.is_dir() {
+        eprintln!("error: `{}` is not a directory", args.path.display());
+        return ExitCode::from(2);
+    }
+
+    let mut files = scan_source_files(&args.path);
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let total = files.len() as f64;
-    let mut per_language: HashMap<Language, usize> = HashMap::new();
-    for (_, language) in &files {
-        *per_language.entry(*language).or_default() += 1;
+    let min_confidence = Confidence::from(args.min_confidence);
+    let mut findings = analyze_files(&files);
+    findings.retain(|finding| finding.confidence >= min_confidence);
+
+    let knowledge = KnowledgeBase::embedded();
+    let mut assessments = assess_all(&findings, knowledge);
+    if args.hide_safe {
+        assessments.retain(|assessment| assessment.risk != QuantumRisk::Safe);
     }
 
-    for (path, language) in &files {
-        let percent = per_language[language] as f64 * 100.0 / total;
-        println!(
-            "{:<8} {:>5.1}%  {}",
-            language.label(),
-            percent,
-            path.display()
-        );
-    }
-    println!("\n{} arquivo(s) detectado(s) em {}", files.len(), root);
+    let report = Report {
+        root: args.path.display().to_string(),
+        files: &files,
+        assessments,
+        knowledge_version: knowledge.version.clone(),
+    };
+    let rendered = render(&report, args.format.into());
 
-    let findings = analyze_files(&files);
-    println!("\n{} cryptographic use(s) found", findings.len());
-    for finding in &findings {
-        let key_size = finding
-            .key_size
-            .map_or(String::new(), |bits| format!("{bits}-bit"));
-        println!(
-            "  {:<9} {:<12} {:<8} {}:{}:{}  {}",
-            finding.algorithm,
-            finding.purpose.label(),
-            key_size,
-            finding.file.display(),
-            finding.line,
-            finding.column,
-            finding.snippet
-        );
+    match args.output {
+        Some(path) => {
+            if let Err(error) = fs::write(&path, rendered) {
+                eprintln!("error: cannot write `{}`: {error}", path.display());
+                return ExitCode::FAILURE;
+            }
+        }
+        None => println!("{rendered}"),
     }
+    ExitCode::SUCCESS
 }
