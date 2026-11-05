@@ -13,6 +13,7 @@ use std::path::Path;
 const BADGE_WIDTH: usize = 7;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    let t = app.lang.t();
     let counts = app.counts();
     let [cards, middle, bottom] = Layout::vertical([
         Constraint::Length(5),
@@ -22,29 +23,36 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     .areas(area);
 
     let columns: [Rect; 4] = Layout::horizontal([Constraint::Fill(1); 4]).areas(cards);
-    card(frame, columns[0], "Files", app.file_count, "scanned", FG);
+    card(
+        frame,
+        columns[0],
+        t.ov_files,
+        app.file_count,
+        t.ov_scanned,
+        FG,
+    );
     card(
         frame,
         columns[1],
-        "Quantum-vulnerable",
+        t.ov_vulnerable,
         counts.broken,
-        "broken by Shor",
+        t.ov_broken_by_shor,
         DANGER,
     );
     card(
         frame,
         columns[2],
-        "Weakened",
+        t.ov_weakened,
         counts.weakened,
-        "weakened by Grover",
+        t.ov_weakened_by_grover,
         ACCENT_LIGHT,
     );
     card(
         frame,
         columns[3],
-        "Already safe",
+        t.ov_safe,
         counts.safe,
-        "no migration needed",
+        t.ov_no_migration,
         SAFE,
     );
 
@@ -111,7 +119,8 @@ fn empty(message: &str) -> Vec<Line<'static>> {
 }
 
 fn render_urgency(frame: &mut Frame, area: Rect, app: &mut App) {
-    let block = panel("By urgency");
+    let t = app.lang.t();
+    let block = panel(t.ov_by_urgency);
     let inner = block.inner(area);
     let counts = app.urgency_counts();
     let max = counts.iter().map(|(_, count)| *count).max().unwrap_or(0);
@@ -125,13 +134,13 @@ fn render_urgency(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let lines: Vec<Line> = if max == 0 {
-        empty("No cryptographic use to show.")
+        empty(t.ov_none_to_show)
     } else {
         counts
             .iter()
             .map(|(urgency, count)| {
                 Line::from(vec![
-                    badge(*urgency),
+                    badge(*urgency, app.lang),
                     Span::raw(" "),
                     Span::styled(
                         bar(*count, max, width),
@@ -146,7 +155,8 @@ fn render_urgency(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_algorithms(frame: &mut Frame, area: Rect, app: &App) {
-    let block = panel("Top algorithms");
+    let t = app.lang.t();
+    let block = panel(t.ov_top_algorithms);
     let inner = block.inner(area);
     let ranked = app.top_algorithms(inner.height.into());
     let max = ranked.first().map_or(0, |(_, count)| *count);
@@ -159,7 +169,7 @@ fn render_algorithms(frame: &mut Frame, area: Rect, app: &App) {
     let bar_width = usize::from(inner.width).saturating_sub(name_width + 6);
 
     let lines: Vec<Line> = if ranked.is_empty() {
-        empty("Nothing to show.")
+        empty(t.ov_nothing)
     } else {
         ranked
             .iter()
@@ -179,20 +189,21 @@ fn render_algorithms(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_files(frame: &mut Frame, area: Rect, app: &App) {
-    let block = panel("Review first");
+    let t = app.lang.t();
+    let block = panel(t.ov_review_first);
     let inner = block.inner(area);
     let files = app.top_files(inner.height.into());
     let path_width = usize::from(inner.width).saturating_sub(BADGE_WIDTH + 5);
 
     let lines: Vec<Line> = if files.is_empty() {
-        empty("Nothing to show.")
+        empty(t.ov_nothing)
     } else {
         files
             .iter()
             .map(|(file, count, urgency)| {
                 let shown = file.strip_prefix(Path::new(&app.root)).unwrap_or(file);
                 Line::from(vec![
-                    badge(*urgency),
+                    badge(*urgency, app.lang),
                     Span::raw(" "),
                     Span::styled(
                         format!(
@@ -210,7 +221,8 @@ fn render_files(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_languages(frame: &mut Frame, area: Rect, app: &App) {
-    let block = panel("Languages");
+    let t = app.lang.t();
+    let block = panel(t.ov_languages);
     let inner = block.inner(area);
     let languages = app.languages();
     let total: usize = languages.iter().map(|(_, count)| *count).sum();
@@ -218,7 +230,7 @@ fn render_languages(frame: &mut Frame, area: Rect, app: &App) {
     let bar_width = usize::from(inner.width).saturating_sub(8 + 12);
 
     let lines: Vec<Line> = if languages.is_empty() {
-        empty("No source files found.")
+        empty(t.ov_no_sources)
     } else {
         languages
             .iter()

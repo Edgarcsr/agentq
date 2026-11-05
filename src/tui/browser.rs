@@ -1,6 +1,9 @@
 //! The folder browser shown when no path is given: pick the project to analyze.
 
-use super::ui::{ACCENT, ACCENT_LIGHT, BORDER, DANGER, FG, MUTED, ON_ACCENT, SAFE, panel};
+use super::ui::{
+    ACCENT, ACCENT_LIGHT, BORDER, DANGER, FG, MUTED, ON_ACCENT, SAFE, key_hints, panel,
+};
+use crate::i18n::{Lang, fill};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -19,13 +22,19 @@ pub enum EntryKind {
     Dir,
 }
 
+/// What a folder looks like, when it is recognizable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hint {
+    Node,
+    Git,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub kind: EntryKind,
     pub name: String,
     pub path: PathBuf,
-    /// What the folder looks like, when it is recognizable.
-    pub hint: Option<&'static str>,
+    pub hint: Option<Hint>,
 }
 
 /// What the browser asks the application to do.
@@ -41,18 +50,18 @@ pub struct Browser {
     pub selected: usize,
     pub list_state: ListState,
     pub show_hidden: bool,
-    /// An error from the last attempt to open a folder.
-    pub message: Option<String>,
+    /// The folder that could not be opened last, and why.
+    pub error: Option<(PathBuf, String)>,
     /// The rows of the list, filled in by the renderer.
     pub list_area: Rect,
 }
 
 /// Recognizes folders worth analyzing.
-fn hint_for(dir: &Path) -> Option<&'static str> {
+fn hint_for(dir: &Path) -> Option<Hint> {
     if dir.join("package.json").is_file() {
-        Some("Node project")
+        Some(Hint::Node)
     } else if dir.join(".git").exists() {
-        Some("git repository")
+        Some(Hint::Git)
     } else {
         None
     }
@@ -108,7 +117,7 @@ impl Browser {
             selected: 0,
             list_state: ListState::default(),
             show_hidden: false,
-            message: None,
+            error: None,
             list_area: Rect::default(),
         };
         browser.open(dir);
@@ -122,10 +131,10 @@ impl Browser {
                 self.dir = dir;
                 self.entries = entries;
                 self.selected = 0;
-                self.message = None;
+                self.error = None;
             }
             Err(error) => {
-                self.message = Some(format!("Cannot open {}: {error}", dir.display()));
+                self.error = Some((dir, error.to_string()));
                 if self.entries.is_empty() {
                     self.entries = list_dir(&self.dir, self.show_hidden).unwrap_or_default();
                 }
@@ -169,7 +178,7 @@ impl Browser {
     }
 
     pub fn handle_key(&mut self, key: KeyCode) -> Option<Action> {
-        self.message = None;
+        self.error = None;
         match key {
             KeyCode::Char('q') | KeyCode::Esc => return Some(Action::Quit),
             KeyCode::Down | KeyCode::Char('j') => self.select(self.selected.saturating_add(1)),
@@ -201,7 +210,7 @@ impl Browser {
     /// Click a folder to select it and click it again to open it; the wheel
     /// moves the selection.
     pub fn handle_mouse(&mut self, kind: MouseEventKind, column: u16, row: u16) -> Option<Action> {
-        self.message = None;
+        self.error = None;
         let at = Position::new(column, row);
         match kind {
             MouseEventKind::Down(MouseButton::Left) if self.list_area.contains(at) => {
@@ -228,12 +237,13 @@ impl Browser {
     }
 }
 
-pub fn render(frame: &mut Frame, browser: &mut Browser) {
+pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
+    let t = lang.t();
     let area = frame.area();
     let [header, body, footer] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(4),
-        Constraint::Length(2),
+        Constraint::Length(3),
     ])
     .areas(area);
 
@@ -245,7 +255,7 @@ pub fn render(frame: &mut Frame, browser: &mut Browser) {
                 .bg(ACCENT)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("  Choose a project to analyze", Style::new().fg(FG)),
+        Span::styled(format!("  {}", t.br_title), Style::new().fg(FG)),
     ]);
     let location = Line::from(Span::styled(
         format!(" {}", browser.dir.display()),
@@ -264,14 +274,14 @@ pub fn render(frame: &mut Frame, browser: &mut Browser) {
                 EntryKind::Analyze => Line::from(vec![
                     Span::styled("● ", Style::new().fg(ACCENT)),
                     Span::styled(
-                        entry.name.clone(),
+                        t.br_analyze,
                         Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 EntryKind::Parent => Line::from(vec![
                     Span::styled("↑ ", Style::new().fg(MUTED)),
                     Span::styled("..", Style::new().fg(FG)),
-                    Span::styled("  parent folder", Style::new().fg(MUTED)),
+                    Span::styled(format!("  {}", t.br_parent), Style::new().fg(MUTED)),
                 ]),
                 EntryKind::Dir => {
                     let mut spans = vec![
@@ -279,7 +289,11 @@ pub fn render(frame: &mut Frame, browser: &mut Browser) {
                         Span::styled(format!("{}/", entry.name), Style::new().fg(FG)),
                     ];
                     if let Some(hint) = entry.hint {
-                        spans.push(Span::styled(format!("  {hint}"), Style::new().fg(SAFE)));
+                        let label = match hint {
+                            Hint::Node => t.hint_node,
+                            Hint::Git => t.hint_git,
+                        };
+                        spans.push(Span::styled(format!("  {label}"), Style::new().fg(SAFE)));
                     }
                     Line::from(spans)
                 }
@@ -288,10 +302,8 @@ pub fn render(frame: &mut Frame, browser: &mut Browser) {
         })
         .collect();
 
-    let block = panel(&format!(
-        "Folders ({})",
-        browser.entries.len().saturating_sub(2)
-    ));
+    let folders = browser.entries.len().saturating_sub(2);
+    let block = panel(&fill(t.br_folders, &[("n", &folders)]));
     browser.list_area = block.inner(body);
     let list = List::new(items)
         .block(block)
@@ -300,34 +312,37 @@ pub fn render(frame: &mut Frame, browser: &mut Browser) {
     browser.list_state.select(Some(browser.selected));
     frame.render_stateful_widget(list, body, &mut browser.list_state);
 
-    let key =
-        |k: &'static str| Span::styled(k, Style::new().fg(ACCENT).add_modifier(Modifier::BOLD));
-    let text = |t: &'static str| Span::styled(t, Style::new().fg(MUTED));
-    let status = match &browser.message {
-        Some(message) => Line::from(Span::styled(format!(" {message}"), Style::new().fg(DANGER))),
-        None => Line::from(text(
-            " Folders marked Node project or git repository are good candidates.",
+    let status = match &browser.error {
+        Some((path, error)) => Line::from(Span::styled(
+            format!(
+                " {}",
+                fill(
+                    t.cannot_open,
+                    &[("path", &path.display()), ("error", error)]
+                )
+            ),
+            Style::new().fg(DANGER),
+        )),
+        None => Line::from(Span::styled(
+            format!(" {}", t.br_tip),
+            Style::new().fg(MUTED),
         )),
     };
-    let keys = Line::from(vec![
-        text(" "),
-        key("↑↓"),
-        text(" move  "),
-        key("Enter"),
-        text(" open or analyze  "),
-        key("←"),
-        text(" parent  "),
-        key("a"),
-        text(" analyze here  "),
-        key("."),
-        text(" hidden  "),
-        key("~"),
-        text(" home  "),
-        key("q"),
-        text(" quit  "),
-        text("click once to select, again to open"),
+    let keys = key_hints(&[
+        ("↑↓", t.br_move),
+        ("Enter", t.br_open),
+        ("←", t.br_back),
+        ("a", t.br_analyze_here),
+        (".", t.br_hidden),
+        ("~", t.br_home),
+        ("L", t.key_language),
+        ("q", t.key_quit),
     ]);
-    frame.render_widget(Paragraph::new(vec![status, keys]), footer);
+    let click = Line::from(Span::styled(
+        format!(" {}", t.br_click),
+        Style::new().fg(MUTED),
+    ));
+    frame.render_widget(Paragraph::new(vec![status, keys, click]), footer);
 }
 
 #[cfg(test)]
@@ -390,7 +405,7 @@ mod tests {
         assert_eq!(browser.entries[0].kind, EntryKind::Analyze);
         assert_eq!(browser.entries[1].kind, EntryKind::Parent);
         let hints: Vec<_> = browser.entries[2..].iter().map(|e| e.hint).collect();
-        assert_eq!(hints, [Some("Node project"), Some("git repository"), None]);
+        assert_eq!(hints, [Some(Hint::Node), Some(Hint::Git), None]);
     }
 
     #[test]
@@ -509,9 +524,10 @@ mod tests {
         let top = browser.dir.clone();
         browser.open(tree.0.join("does-not-exist"));
         assert_eq!(browser.dir, top);
-        assert!(browser.message.as_deref().unwrap().contains("Cannot open"));
+        let (path, _) = browser.error.clone().expect("an error is recorded");
+        assert!(path.ends_with("does-not-exist"));
         assert_eq!(names(&browser).len(), 5);
         browser.handle_key(KeyCode::Down);
-        assert!(browser.message.is_none());
+        assert!(browser.error.is_none());
     }
 }

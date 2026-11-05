@@ -108,7 +108,7 @@ The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) ha
 
 Run `cargo run -- --tui` **without a path** to pick the project in a folder browser (folders with a `package.json` or a `.git` are marked); press `b` at any time to choose another one.
 
-Keys: `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
+Keys: `L` switch the language, `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
 
 Example, scanning a test fixture:
 
@@ -136,6 +136,17 @@ Findings (most urgent first)
     Replace with: ML-KEM (CRYSTALS-Kyber)
     Implementations: @noble/post-quantum (JavaScript), liboqs and liboqs-python, OpenSSL 3.5 or later, Bouncy Castle 1.79 or later (Java), crypto/mlkem (Go 1.24 or later)
 ```
+
+### Language
+
+The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese), and is English when it is neither. In the terminal interface, `L` switches it on the fly.
+
+```sh
+cargo run -- samples/node-shop --lang pt-BR
+cargo run -- samples/node-shop --tui --lang pt-BR
+```
+
+JSON output keeps its field names and machine values (`urgency`, `purpose`, ...) in every language and only translates the prose, with a `language` field saying which. The descriptions of each algorithm come from the knowledge base and are still in English.
 
 ### Evaluation
 

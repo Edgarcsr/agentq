@@ -3,8 +3,7 @@
 use super::app::{App, Areas, Tab};
 use super::overview;
 use crate::assess::{Assessment, Urgency};
-use crate::finding::QuantumRisk;
-use crate::knowledge::Attack;
+use crate::i18n::{Lang, fill};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -33,18 +32,9 @@ pub(super) fn urgency_color(urgency: Urgency) -> Color {
     }
 }
 
-pub(super) fn urgency_label(urgency: Urgency) -> &'static str {
-    match urgency {
-        Urgency::High => " HIGH ",
-        Urgency::Medium => " MED  ",
-        Urgency::Low => " LOW  ",
-        Urgency::None => " OK   ",
-    }
-}
-
-pub(super) fn badge(urgency: Urgency) -> Span<'static> {
+pub(super) fn badge(urgency: Urgency, lang: Lang) -> Span<'static> {
     Span::styled(
-        urgency_label(urgency),
+        lang.badge(urgency),
         Style::new()
             .fg(ON_ACCENT)
             .bg(urgency_color(urgency))
@@ -91,11 +81,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_footer(frame, footer, app);
 
     if app.show_help {
-        render_help(frame, area);
+        render_help(frame, area, app.lang);
     }
 }
 
 fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
+    let t = app.lang.t();
     let title = Line::from(vec![
         Span::styled(
             " agentq ",
@@ -107,8 +98,14 @@ fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled(format!("  {}", app.root), Style::new().fg(FG)),
         Span::styled(
             format!(
-                "  {} file(s) · knowledge base {}",
-                app.file_count, app.knowledge_version
+                "  {}",
+                fill(
+                    t.header_info,
+                    &[
+                        ("files", &app.file_count),
+                        ("version", &app.knowledge_version)
+                    ]
+                )
             ),
             Style::new().fg(MUTED),
         ),
@@ -126,9 +123,9 @@ fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled(format!(" {label} "), style)
     };
     let labels = [
-        ("1 Overview".to_string(), Tab::Overview),
+        (format!("1 {}", t.tab_overview), Tab::Overview),
         (
-            format!("2 Findings ({})", app.visible().len()),
+            format!("2 {} ({})", t.tab_findings, app.visible().len()),
             Tab::Findings,
         ),
     ];
@@ -155,6 +152,8 @@ fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let root = app.root.clone();
+    let lang = app.lang;
+    let t = lang.t();
     let items: Vec<ListItem> = app
         .visible()
         .iter()
@@ -166,14 +165,14 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
                 .unwrap_or(&finding.file)
                 .display();
             let first = Line::from(vec![
-                badge(a.urgency),
+                badge(a.urgency, lang),
                 Span::raw(" "),
                 Span::styled(
                     a.algorithm_name.clone(),
                     Style::new().fg(FG).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("  {}", finding.purpose.label()),
+                    format!("  {}", lang.purpose(finding.purpose)),
                     Style::new().fg(MUTED),
                 ),
             ]);
@@ -185,14 +184,14 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
-    let title = format!("Findings ({})", items.len());
+    let title = fill(t.findings_title, &[("n", &items.len())]);
     app.areas.list = panel(&title).inner(area);
     if items.is_empty() {
         let hidden = app.hidden();
         let message = if hidden > 0 {
-            format!("{hidden} finding(s) hidden by the filters.\nPress s or c to change them.")
+            fill(t.hidden_by_filters, &[("n", &hidden)])
         } else {
-            "No cryptographic use found.".to_string()
+            t.none_found.to_string()
         };
         let text = Paragraph::new(message)
             .style(Style::new().fg(MUTED))
@@ -232,30 +231,11 @@ fn bullet(text: &str) -> Line<'static> {
     ])
 }
 
-fn risk_text(a: &Assessment) -> String {
-    let attack = match a.attack {
-        Attack::Shor => "Shor's algorithm",
-        Attack::Grover => "Grover's algorithm",
-        Attack::None => "no known quantum attack",
-    };
-    match a.risk {
-        QuantumRisk::Broken => format!("broken by {attack}"),
-        QuantumRisk::Weakened => format!("weakened by {attack}"),
-        QuantumRisk::Safe => "safe".to_string(),
-    }
-}
-
 /// The lines of the details pane for one finding.
-fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
+fn detail_lines(a: &Assessment, root: &str, lang: Lang) -> Vec<Line<'static>> {
+    let t = lang.t();
     let finding = &a.finding;
     let location = finding.file.strip_prefix(root).unwrap_or(&finding.file);
-    let urgency_name = match a.urgency {
-        Urgency::High => "high",
-        Urgency::Medium => "medium",
-        Urgency::Low => "low",
-        Urgency::None => "none",
-    };
-
     let mut lines = vec![
         Line::from(Span::styled(
             a.algorithm_name.clone(),
@@ -263,36 +243,39 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
         )),
         Line::raw(""),
         field(
-            "Urgency",
+            t.label_urgency,
             Span::styled(
-                urgency_name,
+                lang.urgency(a.urgency),
                 Style::new()
                     .fg(urgency_color(a.urgency))
                     .add_modifier(Modifier::BOLD),
             ),
         ),
-        field("Quantum", Span::styled(risk_text(a), Style::new().fg(FG))),
         field(
-            "Purpose",
-            Span::styled(finding.purpose.label(), Style::new().fg(FG)),
+            t.label_quantum,
+            Span::styled(lang.risk_sentence(a.risk, &a.attack), Style::new().fg(FG)),
+        ),
+        field(
+            t.label_purpose,
+            Span::styled(lang.purpose(finding.purpose), Style::new().fg(FG)),
         ),
     ];
     if let Some(bits) = finding.key_size {
         lines.push(field(
-            "Key size",
+            t.label_key_size,
             Span::styled(format!("{bits}-bit"), Style::new().fg(FG)),
         ));
     }
     lines.push(field(
-        "Library",
+        t.label_library,
         Span::styled(finding.library.clone(), Style::new().fg(FG)),
     ));
     lines.push(field(
-        "Confidence",
-        Span::styled(format!("{:?}", finding.confidence), Style::new().fg(FG)),
+        t.label_confidence,
+        Span::styled(lang.confidence(finding.confidence), Style::new().fg(FG)),
     ));
     lines.push(field(
-        "Location",
+        t.label_location,
         Span::styled(
             format!("{}:{}:{}", location.display(), finding.line, finding.column),
             Style::new().fg(FG),
@@ -300,14 +283,14 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
     ));
 
     lines.push(Line::raw(""));
-    lines.push(heading("Code"));
+    lines.push(heading(t.h_code));
     lines.push(Line::from(Span::styled(
         format!("  {}", finding.snippet),
         Style::new().fg(ACCENT_LIGHT),
     )));
 
     lines.push(Line::raw(""));
-    lines.push(heading("Why it matters"));
+    lines.push(heading(t.h_why));
     lines.push(Line::from(Span::styled(
         a.explanation.clone(),
         Style::new().fg(FG),
@@ -315,7 +298,7 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
 
     if !a.recommendations.is_empty() {
         lines.push(Line::raw(""));
-        lines.push(heading("Replace with"));
+        lines.push(heading(t.h_replace));
         for recommendation in &a.recommendations {
             lines.push(bullet(&recommendation.name));
         }
@@ -329,7 +312,7 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
         }
         if !seen.is_empty() {
             lines.push(Line::raw(""));
-            lines.push(heading("Implementations"));
+            lines.push(heading(t.h_implementations));
             for implementation in seen {
                 lines.push(bullet(implementation));
             }
@@ -337,7 +320,7 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
     }
     if !a.advice.is_empty() {
         lines.push(Line::raw(""));
-        lines.push(heading("Advice"));
+        lines.push(heading(t.h_advice));
         for advice in &a.advice {
             lines.push(bullet(advice));
         }
@@ -346,11 +329,12 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
 }
 
 fn render_details(frame: &mut Frame, area: Rect, app: &mut App) {
-    let block = panel("Details");
+    let t = app.lang.t();
+    let block = panel(t.details_title);
     let inner = block.inner(area);
     app.areas.details = inner;
     let Some(assessment) = app.selected_assessment() else {
-        let empty = Paragraph::new("Nothing selected.")
+        let empty = Paragraph::new(t.nothing_selected)
             .style(Style::new().fg(MUTED))
             .block(block);
         frame.render_widget(empty, area);
@@ -358,7 +342,8 @@ fn render_details(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
 
-    let paragraph = Paragraph::new(detail_lines(assessment, &app.root)).wrap(Wrap { trim: false });
+    let lines = detail_lines(assessment, &app.root, app.lang);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     // Measured without the border, so it is the exact number of rows once wrapped.
     let rows = u16::try_from(paragraph.line_count(inner.width)).unwrap_or(u16::MAX);
     app.detail_max_scroll = rows.saturating_sub(inner.height);
@@ -368,77 +353,97 @@ fn render_details(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
+    let lang = app.lang;
+    let t = lang.t();
     let counts = app.counts();
     let mut summary = vec![
         Span::styled(
-            format!(" {} use(s) ", counts.total),
+            format!(" {} ", fill(t.footer_uses, &[("n", &counts.total)])),
             Style::new().fg(FG).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("{} broken ", counts.broken),
+            format!("{} ", fill(t.footer_broken, &[("n", &counts.broken)])),
             Style::new().fg(DANGER),
         ),
         Span::styled(
-            format!("{} weakened ", counts.weakened),
+            format!("{} ", fill(t.footer_weakened, &[("n", &counts.weakened)])),
             Style::new().fg(ACCENT_LIGHT),
         ),
-        Span::styled(format!("{} safe", counts.safe), Style::new().fg(MUTED)),
+        Span::styled(
+            fill(t.footer_safe, &[("n", &counts.safe)]),
+            Style::new().fg(MUTED),
+        ),
         Span::styled(
             format!(
-                "   hide safe: {} · min confidence: {:?}",
-                if app.hide_safe { "on" } else { "off" },
-                app.min_confidence
+                "   {}",
+                fill(
+                    t.footer_filters,
+                    &[
+                        ("safe", &lang.on_off(app.hide_safe)),
+                        ("confidence", &lang.confidence(app.min_confidence)),
+                    ]
+                )
             ),
             Style::new().fg(MUTED),
         ),
     ];
+    // A message about the last action replaces the totals until the next key,
+    // so it is never pushed off the line by them.
     if let Some(status) = &app.status {
-        summary.push(Span::styled(
-            format!("   {status}"),
-            Style::new().fg(ACCENT),
-        ));
+        summary = vec![Span::styled(format!(" {status}"), Style::new().fg(ACCENT))];
     }
 
-    let key =
-        |k: &'static str| Span::styled(k, Style::new().fg(ACCENT).add_modifier(Modifier::BOLD));
-    let text = |t: &'static str| Span::styled(t, Style::new().fg(MUTED));
-    let keys = Line::from(vec![
-        text(" "),
-        key("↑↓"),
-        text(" select  "),
-        key("1 2"),
-        text(" tabs  "),
-        key("PgUp/PgDn"),
-        text(" scroll  "),
-        key("s"),
-        text(" hide safe  "),
-        key("c"),
-        text(" confidence  "),
-        key("r"),
-        text(" rescan  "),
-        key("b"),
-        text(" browse  "),
-        key("?"),
-        text(" help  "),
-        key("q"),
-        text(" quit"),
-    ]);
-    frame.render_widget(Paragraph::new(vec![Line::from(summary), keys]), area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(summary),
+            key_hints(&[
+                ("↑↓", t.key_select),
+                ("1 2", t.key_tabs),
+                ("PgUp/PgDn", t.key_scroll),
+                ("s", t.key_hide_safe),
+                ("c", t.key_confidence),
+                ("r", t.key_rescan),
+                ("b", t.key_browse),
+                ("L", t.key_language),
+                ("?", t.key_help),
+                ("q", t.key_quit),
+            ]),
+        ]),
+        area,
+    );
 }
 
-fn render_help(frame: &mut Frame, area: Rect) {
+/// A line of `key  meaning` pairs, as shown at the bottom of every screen.
+pub(super) fn key_hints(pairs: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = vec![Span::styled(" ", Style::new().fg(MUTED))];
+    for (index, (key, meaning)) in pairs.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            key.to_string(),
+            Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(format!(" {meaning}"), Style::new().fg(MUTED)));
+    }
+    Line::from(spans)
+}
+
+fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
+    let t = lang.t();
     let rows = [
-        ("↑ ↓  j k", "select a finding"),
-        ("g  G", "first / last finding"),
-        ("PgUp  PgDn  space", "scroll the details"),
-        ("s", "hide or show safe uses"),
-        ("c", "cycle the minimum confidence"),
-        ("r", "scan the directory again"),
-        ("b", "choose another project"),
-        ("1  2  Tab", "switch between overview and findings"),
-        ("mouse", "click tabs and findings, wheel to scroll"),
-        ("?", "close this help"),
-        ("q  Esc", "quit"),
+        ("↑ ↓  j k", t.help_select),
+        ("g  G", t.help_first_last),
+        ("PgUp  PgDn  space", t.help_scroll),
+        ("s", t.help_hide_safe),
+        ("c", t.help_confidence),
+        ("r", t.help_rescan),
+        ("b", t.help_browse),
+        ("1  2  Tab", t.help_tabs),
+        ("mouse", t.help_mouse),
+        ("L", t.help_language),
+        ("?", t.help_close),
+        ("q  Esc", t.help_quit),
     ];
     let mut lines = vec![Line::raw("")];
     for (keys, what) in rows {
@@ -451,16 +456,11 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ]));
     }
     lines.push(Line::raw(""));
-    for legend in [
-        "  HIGH  key exchange or encryption that quantum computers break",
-        "  MED   signatures that quantum computers could forge",
-        "  LOW   weakened by Grover's algorithm",
-        "  OK    safe, or already post-quantum",
-    ] {
+    for legend in [t.legend_high, t.legend_medium, t.legend_low, t.legend_none] {
         lines.push(Line::from(Span::styled(legend, Style::new().fg(MUTED))));
     }
 
-    let width = 68.min(area.width);
+    let width = 74.min(area.width);
     let height = (lines.len() as u16 + 2).min(area.height);
     let [popup] = Layout::horizontal([Constraint::Length(width)])
         .flex(Flex::Center)
@@ -472,7 +472,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(panel("Help")),
+            .block(panel(t.help_title)),
         popup,
     );
 }
