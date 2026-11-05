@@ -31,6 +31,10 @@ struct Args {
     /// Leave out uses that are already safe against quantum attacks.
     #[arg(long)]
     hide_safe: bool,
+
+    /// Browse the findings in an interactive terminal interface.
+    #[arg(short, long, conflicts_with_all = ["format", "output"])]
+    tui: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -73,6 +77,16 @@ fn main() -> ExitCode {
     if !args.path.is_dir() {
         eprintln!("error: `{}` is not a directory", args.path.display());
         return ExitCode::from(2);
+    }
+
+    if args.tui {
+        return match agentq::tui::run(&args.path, args.hide_safe, args.min_confidence.into()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            }
+        };
     }
 
     let analysis = analyze_directory(&args.path);
