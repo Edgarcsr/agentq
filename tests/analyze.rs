@@ -165,3 +165,23 @@ fn tui_cannot_be_combined_with_a_report_format() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
 }
+
+#[test]
+fn sample_shop_covers_every_urgency_level() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("samples/node-shop");
+    let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .arg(&root)
+        .args(["--format", "json"])
+        .output()
+        .expect("failed to run agentq");
+    assert!(output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(report["summary"]["files"], 10);
+    assert_eq!(report["summary"]["findings"], 22);
+    let urgency = &report["summary"]["by_urgency"];
+    assert_eq!(urgency["high"], 4);
+    assert_eq!(urgency["medium"], 6);
+    assert_eq!(urgency["low"], 6);
+    assert_eq!(urgency["none"], 6);
+}

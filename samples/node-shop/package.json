@@ -1,0 +1,12 @@
+{
+  "name": "node-shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Small fictional shop used to try agentq. Nothing here is meant to run.",
+  "type": "commonjs",
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0",
+    "node-forge": "^1.3.1",
+    "@noble/post-quantum": "^0.2.0"
+  }
+}
