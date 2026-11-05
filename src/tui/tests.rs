@@ -3,8 +3,9 @@
 use super::app::{App, Tab};
 use super::browser::{Browser, fixture::TempTree};
 use super::ui;
-use super::{Screen, Tui};
+use super::{Cmd, Msg, Screen, Tui, perform};
 use crate::analysis::Analysis;
+use crate::analysis::analyze_directory;
 use crate::assess::Urgency;
 use crate::finding::{Confidence, QuantumRisk};
 use crate::i18n::Lang;
@@ -403,6 +404,43 @@ fn draw_tui(tui: &mut Tui, width: u16, height: u16) -> String {
     screen(terminal.backend().buffer())
 }
 
+/// Does what the commands ask for, right here, and delivers the results.
+fn settle(tui: &mut Tui) {
+    loop {
+        let commands = tui.drain_commands();
+        if commands.is_empty() {
+            break;
+        }
+        for command in commands {
+            let Cmd::Scan { id, path, lang } = command;
+            let analysis = analyze_directory(&path, lang);
+            tui.update(Msg::Scanned {
+                id,
+                path,
+                lang,
+                analysis,
+            });
+        }
+    }
+}
+
+fn press(tui: &mut Tui, code: KeyCode) {
+    tui.update(Msg::Key(code));
+    settle(tui);
+}
+
+/// Starts the interface and lets the first scan finish.
+fn started(
+    path: Option<&std::path::Path>,
+    hide_safe: bool,
+    confidence: Confidence,
+    lang: Lang,
+) -> Tui {
+    let mut tui = Tui::start(path, hide_safe, confidence, lang);
+    settle(&mut tui);
+    tui
+}
+
 fn sample() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("samples/node-shop")
 }
@@ -444,11 +482,11 @@ fn the_browser_explains_when_a_folder_cannot_be_opened() {
 
 #[test]
 fn a_path_skips_the_browser() {
-    let tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
-    match &tui.screen {
-        Screen::Results(app) => assert_eq!(app.visible().len(), 22),
-        Screen::Browse(_) => panic!("expected the results"),
-    }
+    let tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    let Screen::Results(app) = &tui.screen else {
+        panic!("expected the results")
+    };
+    assert_eq!(app.visible().len(), 22);
 }
 
 #[test]
@@ -468,8 +506,8 @@ fn choosing_a_folder_shows_its_results_and_b_goes_back() {
         unreachable!()
     };
     browser.select_path(&std::fs::canonicalize(sample()).unwrap());
-    tui.handle_key(KeyCode::Enter);
-    tui.handle_key(KeyCode::Char('a'));
+    press(&mut tui, KeyCode::Enter);
+    press(&mut tui, KeyCode::Char('a'));
 
     let Screen::Results(app) = &tui.screen else {
         panic!("expected the results")
@@ -481,7 +519,7 @@ fn choosing_a_folder_shows_its_results_and_b_goes_back() {
     assert!(draw_tui(&mut tui, 120, 34).contains("Overview"));
 
     // "b" returns to the folder that holds the project, with it selected.
-    tui.handle_key(KeyCode::Char('b'));
+    press(&mut tui, KeyCode::Char('b'));
     let Screen::Browse(browser) = &tui.screen else {
         panic!("expected the browser")
     };
@@ -492,18 +530,18 @@ fn choosing_a_folder_shows_its_results_and_b_goes_back() {
 #[test]
 fn quitting_works_from_both_screens() {
     let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
-    tui.handle_key(KeyCode::Char('q'));
+    press(&mut tui, KeyCode::Char('q'));
     assert!(tui.should_quit());
 
-    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
-    tui.handle_key(KeyCode::Char('q'));
+    let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    press(&mut tui, KeyCode::Char('q'));
     assert!(tui.should_quit());
 }
 
 #[test]
 fn rescan_keeps_the_results_screen() {
-    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
-    tui.handle_key(KeyCode::Char('r'));
+    let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    press(&mut tui, KeyCode::Char('r'));
     let Screen::Results(app) = &tui.screen else {
         panic!("expected the results")
     };
@@ -521,11 +559,11 @@ fn mouse_events_reach_the_active_screen() {
         unreachable!()
     };
     let list = browser.list_area;
-    tui.handle_mouse(
-        MouseEventKind::Down(MouseButton::Left),
-        list.x + 3,
-        list.y + 2,
-    );
+    tui.update(Msg::Mouse {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: list.x + 3,
+        row: list.y + 2,
+    });
     let Screen::Browse(browser) = &tui.screen else {
         unreachable!()
     };
@@ -660,11 +698,11 @@ fn the_l_key_switches_the_language_and_rewrites_the_advice() {
 
 #[test]
 fn the_language_survives_moving_between_screens() {
-    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
-    tui.handle_key(KeyCode::Char('L'));
+    let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    press(&mut tui, KeyCode::Char('L'));
     assert!(draw_tui(&mut tui, 130, 34).contains("Visão geral"));
 
-    tui.handle_key(KeyCode::Char('b'));
+    press(&mut tui, KeyCode::Char('b'));
     let browser = draw_tui(&mut tui, 110, 24);
     for expected in [
         "Escolha um projeto para analisar",
@@ -679,9 +717,9 @@ fn the_language_survives_moving_between_screens() {
     }
 
     // Switching back in the browser sticks when a project is opened again.
-    tui.handle_key(KeyCode::Char('L'));
+    press(&mut tui, KeyCode::Char('L'));
     assert!(draw_tui(&mut tui, 110, 24).contains("Choose a project to analyze"));
-    tui.handle_key(KeyCode::Char('a'));
+    press(&mut tui, KeyCode::Char('a'));
     assert!(draw_tui(&mut tui, 130, 34).contains("Overview"));
 }
 
@@ -708,4 +746,165 @@ fn the_rescan_status_is_translated() {
     });
     // It is visible even on a terminal too narrow for the whole summary.
     assert!(draw(&mut app, 80, 24).contains("Análise refeita: 3 uso(s) em 4 arquivo(s)"));
+}
+
+#[test]
+fn a_path_shows_a_loading_screen_until_the_scan_arrives() {
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
+    assert!(tui.is_busy());
+    let loading = draw_tui(&mut tui, 100, 20);
+    assert!(loading.contains("Analyzing"), "{loading}");
+    assert!(loading.contains("node-shop"), "{loading}");
+    assert!(loading.contains("Esc cancels"), "{loading}");
+    assert!(loading.contains("⠋"), "{loading}");
+
+    let commands = tui.drain_commands();
+    assert_eq!(commands.len(), 1);
+    let Cmd::Scan { path, .. } = &commands[0];
+    assert_eq!(path, &sample());
+
+    // The scan finishes: the results replace the loading screen.
+    let Cmd::Scan { id, path, lang } = commands.into_iter().next().unwrap();
+    let analysis = analyze_directory(&path, lang);
+    tui.update(Msg::Scanned {
+        id,
+        path,
+        lang,
+        analysis,
+    });
+    assert!(!tui.is_busy());
+    assert!(matches!(tui.screen, Screen::Results(_)));
+}
+
+#[test]
+fn ticks_move_the_spinner() {
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
+    let first = draw_tui(&mut tui, 100, 20);
+    tui.update(Msg::Tick);
+    let second = draw_tui(&mut tui, 100, 20);
+    assert!(first.contains("⠋") && !first.contains("⠙"));
+    assert!(second.contains("⠙") && !second.contains("⠋"));
+}
+
+#[test]
+fn escape_cancels_the_loading_and_a_late_result_is_ignored() {
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
+    let Cmd::Scan { id, path, lang } = tui.drain_commands().into_iter().next().unwrap();
+
+    tui.update(Msg::Key(KeyCode::Esc));
+    assert!(!tui.is_busy());
+    let Screen::Browse(browser) = &tui.screen else {
+        panic!("expected the browser")
+    };
+    assert_eq!(browser.entries[browser.selected].name, "node-shop");
+
+    // The cancelled scan still finishes in the background; nobody wants it.
+    let analysis = analyze_directory(&path, lang);
+    tui.update(Msg::Scanned {
+        id,
+        path,
+        lang,
+        analysis,
+    });
+    assert!(matches!(tui.screen, Screen::Browse(_)));
+}
+
+#[test]
+fn only_the_latest_scan_counts() {
+    let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    // Two rescans in a row: the second is ignored while the first runs.
+    tui.update(Msg::Key(KeyCode::Char('r')));
+    tui.update(Msg::Key(KeyCode::Char('r')));
+    assert_eq!(tui.drain_commands().len(), 1);
+}
+
+#[test]
+fn a_rescan_keeps_the_results_on_screen_while_it_runs() {
+    let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    tui.update(Msg::Key(KeyCode::Down));
+    tui.update(Msg::Key(KeyCode::Char('r')));
+    assert!(tui.is_busy());
+    let screen = draw_tui(&mut tui, 140, 34);
+    assert!(screen.contains("Scanning…"), "{screen}");
+    assert!(
+        screen.contains("Overview"),
+        "the results stay visible:\n{screen}"
+    );
+
+    settle(&mut tui);
+    assert!(!tui.is_busy());
+    let screen = draw_tui(&mut tui, 140, 34);
+    assert!(!screen.contains("Scanning…"), "{screen}");
+    let Screen::Results(app) = &tui.screen else {
+        panic!("expected the results")
+    };
+    assert!(!app.scanning);
+    assert!(app.status.as_deref().unwrap().contains("22 use(s)"));
+}
+
+#[test]
+fn ctrl_c_quits_from_every_screen() {
+    for mut tui in [
+        Tui::start(None, false, Confidence::Low, Lang::En),
+        Tui::start(Some(&sample()), false, Confidence::Low, Lang::En),
+        started(Some(&sample()), false, Confidence::Low, Lang::En),
+    ] {
+        tui.update(Msg::Quit);
+        assert!(tui.should_quit());
+    }
+}
+
+#[test]
+fn the_language_chosen_while_loading_wins() {
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
+    tui.update(Msg::Key(KeyCode::Char('L')));
+    assert!(draw_tui(&mut tui, 100, 20).contains("Analisando"));
+    // The scan was started in English, but the user has moved to Portuguese.
+    settle(&mut tui);
+    let Screen::Results(app) = &tui.screen else {
+        panic!("expected the results")
+    };
+    assert_eq!(app.lang, Lang::PtBr);
+    assert!(
+        app.selected_assessment()
+            .is_some_and(|a| a.explanation.contains("colher agora")
+                || a.advice.iter().any(|t| t.contains("híbrido")))
+    );
+}
+
+#[test]
+fn a_scan_runs_on_a_background_thread_and_reports_back() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    perform(
+        Cmd::Scan {
+            id: 7,
+            path: sample(),
+            lang: Lang::En,
+        },
+        &tx,
+    );
+    let msg = rx
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the scan should finish");
+    let Msg::Scanned { id, analysis, .. } = msg else {
+        panic!("expected Scanned")
+    };
+    assert_eq!(id, 7);
+    assert_eq!(analysis.assessments.len(), 22);
+}
+
+#[test]
+fn the_busy_state_follows_the_scans() {
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
+    assert!(!tui.is_busy());
+    let Screen::Browse(browser) = &mut tui.screen else {
+        unreachable!()
+    };
+    browser.select_path(&std::fs::canonicalize(sample().parent().unwrap()).unwrap());
+    // Pressing "a" in the browser analyzes the folder being shown.
+    tui.update(Msg::Key(KeyCode::Char('a')));
+    assert!(tui.is_busy());
+    assert!(matches!(tui.screen, Screen::Loading(_)));
+    settle(&mut tui);
+    assert!(!tui.is_busy());
 }

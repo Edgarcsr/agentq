@@ -76,6 +76,10 @@ pub struct App {
     pub should_quit: bool,
     /// One-line message about the last action, cleared on the next key.
     pub status: Option<String>,
+    /// A new scan of the same folder is running in the background.
+    pub scanning: bool,
+    /// Frame of the spinner shown while scanning.
+    pub spinner: usize,
 }
 
 impl App {
@@ -105,6 +109,8 @@ impl App {
             show_help: false,
             should_quit: false,
             status: None,
+            scanning: false,
+            spinner: 0,
         }
     }
 
