@@ -2,6 +2,7 @@
 //! attacks, how urgent a migration is, and what to move to.
 
 use crate::finding::{Finding, Purpose, QuantumRisk};
+use crate::i18n::Lang;
 use crate::knowledge::{Attack, KnowledgeBase};
 use serde::Serialize;
 
@@ -38,14 +39,17 @@ pub struct Assessment {
     pub advice: Vec<String>,
 }
 
-/// Assesses `finding` against `knowledge`. Returns `None` when the algorithm
-/// is not in the knowledge base.
-pub fn assess(finding: &Finding, knowledge: &KnowledgeBase) -> Option<Assessment> {
+/// Assesses `finding` against `knowledge`, writing the advice in `lang`.
+/// Returns `None` when the algorithm is not in the knowledge base.
+///
+/// The description of the algorithm itself comes from the knowledge base and
+/// is in English in every language.
+pub fn assess(finding: &Finding, knowledge: &KnowledgeBase, lang: Lang) -> Option<Assessment> {
     let algorithm = knowledge.get(&finding.algorithm)?;
     let urgency = urgency(algorithm.risk, finding.purpose);
 
     let mut explanation = algorithm.rationale.clone();
-    if let Some(context) = purpose_context(algorithm.risk, finding.purpose) {
+    if let Some(context) = purpose_context(algorithm.risk, finding.purpose, lang) {
         explanation.push(' ');
         explanation.push_str(context);
     }
@@ -55,17 +59,13 @@ pub fn assess(finding: &Finding, knowledge: &KnowledgeBase) -> Option<Assessment
 
     let mut advice = Vec::new();
     if urgency != Urgency::None {
-        advice.extend(migration_advice(algorithm.risk, finding.purpose));
+        advice.extend(migration_advice(algorithm.risk, finding.purpose, lang));
         if !algorithm.notes.is_empty() {
             advice.push(algorithm.notes.clone());
         }
     }
     if finding.purpose == Purpose::Unknown && algorithm.risk == QuantumRisk::Broken {
-        advice.push(
-            "The purpose of this key could not be determined; check how it is used to choose \
-             between a key encapsulation mechanism (ML-KEM) and a signature scheme (ML-DSA)."
-                .to_string(),
-        );
+        advice.push(lang.t().advice_unknown_purpose.to_string());
     }
 
     Some(Assessment {
@@ -81,10 +81,10 @@ pub fn assess(finding: &Finding, knowledge: &KnowledgeBase) -> Option<Assessment
 }
 
 /// Assesses every finding, dropping those whose algorithm is unknown.
-pub fn assess_all(findings: &[Finding], knowledge: &KnowledgeBase) -> Vec<Assessment> {
+pub fn assess_all(findings: &[Finding], knowledge: &KnowledgeBase, lang: Lang) -> Vec<Assessment> {
     findings
         .iter()
-        .filter_map(|finding| assess(finding, knowledge))
+        .filter_map(|finding| assess(finding, knowledge, lang))
         .collect()
 }
 
@@ -101,16 +101,11 @@ fn urgency(risk: QuantumRisk, purpose: Purpose) -> Urgency {
     }
 }
 
-fn purpose_context(risk: QuantumRisk, purpose: Purpose) -> Option<&'static str> {
+fn purpose_context(risk: QuantumRisk, purpose: Purpose, lang: Lang) -> Option<&'static str> {
+    let t = lang.t();
     match (risk, purpose) {
-        (QuantumRisk::Broken, Purpose::KeyExchange | Purpose::Encryption) => Some(
-            "Traffic or data protected this way can be recorded today and decrypted once a \
-             quantum computer exists (harvest now, decrypt later).",
-        ),
-        (QuantumRisk::Broken, Purpose::Signature) => Some(
-            "A quantum attacker able to recover private keys could forge signatures, which \
-             matters most for signatures that must stay trustworthy for years.",
-        ),
+        (QuantumRisk::Broken, Purpose::KeyExchange | Purpose::Encryption) => Some(t.ctx_harvest),
+        (QuantumRisk::Broken, Purpose::Signature) => Some(t.ctx_forge),
         _ => None,
     }
 }
@@ -146,22 +141,14 @@ fn recommendations(
         .collect()
 }
 
-fn migration_advice(risk: QuantumRisk, purpose: Purpose) -> Vec<String> {
+fn migration_advice(risk: QuantumRisk, purpose: Purpose, lang: Lang) -> Vec<String> {
+    let t = lang.t();
     match (risk, purpose) {
-        (QuantumRisk::Broken, Purpose::KeyExchange | Purpose::Encryption) => vec![
-            "Use a hybrid scheme that combines the classical algorithm with ML-KEM, so security \
-             holds if either one is broken."
-                .to_string(),
-        ],
-        (QuantumRisk::Broken, Purpose::Signature) => vec![
-            "Migrate long-lived signatures first (certificates, firmware, signed archives). \
-             Post-quantum signatures and keys are much larger, so check size limits in protocols \
-             and storage."
-                .to_string(),
-        ],
-        (QuantumRisk::Weakened, _) => {
-            vec!["Prefer 256-bit symmetric keys and 256-bit or longer hash outputs.".to_string()]
+        (QuantumRisk::Broken, Purpose::KeyExchange | Purpose::Encryption) => {
+            vec![t.advice_hybrid.to_string()]
         }
+        (QuantumRisk::Broken, Purpose::Signature) => vec![t.advice_signatures.to_string()],
+        (QuantumRisk::Weakened, _) => vec![t.advice_symmetric.to_string()],
         _ => vec![],
     }
 }
@@ -187,7 +174,12 @@ mod tests {
     }
 
     fn assess_one(algorithm: &str, purpose: Purpose) -> Assessment {
-        assess(&finding(algorithm, purpose), KnowledgeBase::embedded()).unwrap()
+        assess(
+            &finding(algorithm, purpose),
+            KnowledgeBase::embedded(),
+            Lang::En,
+        )
+        .unwrap()
     }
 
     fn ids(assessment: &Assessment) -> Vec<&str> {
@@ -270,7 +262,7 @@ mod tests {
             finding("rot13", Purpose::Unknown),
             finding("rsa", Purpose::Signature),
         ];
-        let assessments = assess_all(&findings, KnowledgeBase::embedded());
+        let assessments = assess_all(&findings, KnowledgeBase::embedded(), Lang::En);
         assert_eq!(assessments.len(), 1);
         assert_eq!(assessments[0].finding.algorithm, "rsa");
     }
@@ -280,5 +272,39 @@ mod tests {
         assert!(Urgency::None < Urgency::Low);
         assert!(Urgency::Low < Urgency::Medium);
         assert!(Urgency::Medium < Urgency::High);
+    }
+
+    #[test]
+    fn advice_is_written_in_the_requested_language() {
+        let finding = finding("ecdh", Purpose::KeyExchange);
+        let portuguese = assess(&finding, KnowledgeBase::embedded(), Lang::PtBr).unwrap();
+        assert!(
+            portuguese
+                .explanation
+                .contains("colher agora, decifrar depois")
+        );
+        assert!(
+            portuguese
+                .advice
+                .iter()
+                .any(|text| text.contains("esquema híbrido"))
+        );
+        // Same decision whatever the language.
+        let english = assess(&finding, KnowledgeBase::embedded(), Lang::En).unwrap();
+        assert_eq!(portuguese.urgency, english.urgency);
+        assert_eq!(portuguese.recommendations, english.recommendations);
+
+        let unknown = assess(
+            &super::tests::finding("rsa", Purpose::Unknown),
+            KnowledgeBase::embedded(),
+            Lang::PtBr,
+        )
+        .unwrap();
+        assert!(
+            unknown
+                .advice
+                .iter()
+                .any(|text| text.contains("Não foi possível determinar"))
+        );
     }
 }

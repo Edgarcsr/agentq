@@ -7,6 +7,7 @@ mod text;
 use crate::assess::{Assessment, Urgency};
 use crate::detect::Language;
 use crate::finding::QuantumRisk;
+use crate::i18n::Lang;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -25,6 +26,8 @@ pub struct Report<'a> {
     pub files: &'a [(PathBuf, Language)],
     pub assessments: Vec<Assessment>,
     pub knowledge_version: String,
+    /// Language of the labels and of the advice.
+    pub lang: Lang,
 }
 
 /// Counts shown at the top of every format.
@@ -193,6 +196,7 @@ pub(crate) mod fixtures {
                 finding("src/b.ts", 7, "ecdh", Purpose::KeyExchange, Some(256)),
             ],
             KnowledgeBase::embedded(),
+            Lang::En,
         )
     }
 
@@ -202,6 +206,7 @@ pub(crate) mod fixtures {
             files,
             assessments: assessments(),
             knowledge_version: KnowledgeBase::embedded().version.clone(),
+            lang: Lang::En,
         }
     }
 }

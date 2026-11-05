@@ -7,6 +7,8 @@ struct JsonReport<'a> {
     tool: &'static str,
     version: &'static str,
     knowledge_base: &'a str,
+    /// Language of the explanations and advice; the field names never change.
+    language: &'static str,
     root: &'a str,
     summary: Summary,
     findings: Vec<&'a Assessment>,
@@ -17,6 +19,7 @@ pub fn render(report: &Report) -> String {
         tool: "agentq",
         version: env!("CARGO_PKG_VERSION"),
         knowledge_base: &report.knowledge_version,
+        language: report.lang.code(),
         root: &report.root,
         summary: report.summary(),
         findings: report.sorted_assessments(),
@@ -36,6 +39,7 @@ mod tests {
             serde_json::from_str(&render(&fixtures::report(&files))).unwrap();
         assert_eq!(json["tool"], "agentq");
         assert_eq!(json["root"], "project");
+        assert_eq!(json["language"], "en");
         assert_eq!(json["summary"]["findings"], 3);
         assert_eq!(json["findings"][0]["finding"]["algorithm"], "ecdh");
         assert_eq!(json["findings"][0]["urgency"], "high");

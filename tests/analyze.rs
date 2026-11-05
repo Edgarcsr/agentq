@@ -207,3 +207,97 @@ fn without_a_path_a_report_analyzes_the_current_folder() {
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["summary"]["findings"], 5);
 }
+
+/// Runs the binary on the fixture with a controlled locale.
+fn run_with_locale(locale: Option<&str>, args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agentq"));
+    command
+        .arg(fixture("node_crypto"))
+        .args(args)
+        .env_remove("LC_ALL")
+        .env_remove("LC_MESSAGES")
+        .env_remove("LANG");
+    if let Some(locale) = locale {
+        command.env("LANG", locale);
+    }
+    command.output().expect("failed to run agentq")
+}
+
+fn stdout_of(output: Output) -> String {
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn lang_flag_switches_the_report_to_portuguese() {
+    let text = stdout_of(run_with_locale(None, &["--lang", "pt-BR"]));
+    for expected in [
+        "Relatório do agentq para",
+        "[ALTA] RSA (cifragem)",
+        "Por quê:",
+        "Substituir por: ML-KEM",
+        "Esquema híbrido".to_lowercase().as_str(),
+    ] {
+        assert!(
+            text.to_lowercase().contains(&expected.to_lowercase()),
+            "missing `{expected}` in:\n{text}"
+        );
+    }
+    // The labels are translated; the description of each algorithm comes from the
+    // knowledge base and stays in English.
+    assert!(!text.contains("Replace with:"));
+    assert!(text.contains("Security rests on integer factoring"));
+}
+
+#[test]
+fn the_language_is_detected_from_the_environment() {
+    let portuguese = stdout_of(run_with_locale(Some("pt_BR.UTF-8"), &[]));
+    assert!(portuguese.contains("Relatório do agentq"), "{portuguese}");
+
+    let english = stdout_of(run_with_locale(Some("de_DE.UTF-8"), &[]));
+    assert!(english.contains("agentq report for"), "{english}");
+    let english = stdout_of(run_with_locale(None, &[]));
+    assert!(english.contains("agentq report for"), "{english}");
+}
+
+#[test]
+fn the_flag_wins_over_the_environment() {
+    let english = stdout_of(run_with_locale(Some("pt_BR.UTF-8"), &["--lang", "en"]));
+    assert!(english.contains("agentq report for"), "{english}");
+}
+
+#[test]
+fn json_keeps_its_field_names_and_says_the_language() {
+    let report: Value = serde_json::from_str(&stdout_of(run_with_locale(
+        None,
+        &["--format", "json", "--lang", "pt"],
+    )))
+    .unwrap();
+    assert_eq!(report["language"], "pt-BR");
+    // Machine-readable values stay the same; only the prose is translated.
+    assert_eq!(report["findings"][0]["urgency"], "high");
+    assert_eq!(report["findings"][0]["finding"]["purpose"], "encryption");
+    assert!(
+        report["findings"][0]["explanation"]
+            .as_str()
+            .unwrap()
+            .contains("colher agora")
+    );
+}
+
+#[test]
+fn markdown_is_translated_too() {
+    let markdown = stdout_of(run_with_locale(
+        None,
+        &["--format", "md", "--lang", "pt-BR"],
+    ));
+    assert!(markdown.starts_with("# Relatório do agentq"), "{markdown}");
+    assert!(markdown.contains("## Achados"));
+}
+
+#[test]
+fn an_unknown_language_is_rejected() {
+    let output = run_with_locale(None, &["--lang", "klingon"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown language"));
+}
