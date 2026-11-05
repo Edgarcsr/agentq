@@ -389,7 +389,12 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     ];
     // A message about the last action replaces the totals until the next key,
     // so it is never pushed off the line by them.
-    if let Some(status) = &app.status {
+    if app.scanning {
+        summary = vec![Span::styled(
+            format!(" {} {}", super::loading::frame(app.spinner), t.scanning),
+            Style::new().fg(ACCENT),
+        )];
+    } else if let Some(status) = &app.status {
         summary = vec![Span::styled(format!(" {status}"), Style::new().fg(ACCENT))];
     }
 

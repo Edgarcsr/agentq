@@ -291,6 +291,11 @@ texts! {
         "Análise refeita: {uses} uso(s) em {files} arquivo(s)";
     status_no_finding: "No finding with that urgency", "Nenhum achado com essa urgência";
 
+    // --- terminal interface: background work ---
+    loading: "Analyzing {path}", "Analisando {path}";
+    loading_hint: "Esc cancels · L language · q quits", "Esc cancela · L idioma · q sai";
+    scanning: "Scanning…", "Analisando…";
+
     // --- terminal interface: help ---
     help_title: "Help", "Ajuda";
     help_select: "select a finding", "selecionar um achado";

@@ -137,6 +137,10 @@ Findings (most urgent first)
     Implementations: @noble/post-quantum (JavaScript), liboqs and liboqs-python, OpenSSL 3.5 or later, Bouncy Castle 1.79 or later (Java), crypto/mlkem (Go 1.24 or later)
 ```
 
+The analysis runs in the background, so a big folder never freezes the screen: a spinner is shown while it runs, `Esc` cancels, and `r` scans again while the current results stay visible. `Ctrl-C` quits from anywhere.
+
+The interface is structured like a [Bubble Tea](https://github.com/charmbracelet/bubbletea) program: one model (`Tui`), messages (`Msg`: a key, a mouse event, a tick, a finished scan), a single `update` that changes the state and asks for work as commands (`Cmd`), and a `render` that only draws. The runtime runs the commands on threads and feeds their results back as messages, which keeps all the logic testable without a terminal.
+
 ### Language
 
 The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese), and is English when it is neither. In the terminal interface, `L` switches it on the fly.
