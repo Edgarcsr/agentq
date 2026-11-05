@@ -91,6 +91,7 @@ impl Tui {
 
     pub fn handle_key(&mut self, code: KeyCode) {
         match &mut self.screen {
+            Screen::Browse(_) if code == KeyCode::Char('L') => self.lang = self.lang.other(),
             Screen::Browse(browser) => match browser.handle_key(code) {
                 Some(Action::Analyze(path)) => self.open_results(&path),
                 Some(Action::Quit) => self.quit = true,
@@ -98,6 +99,8 @@ impl Tui {
             },
             Screen::Results(app) => {
                 let command = app.handle_key(code);
+                // The language can be switched from the results.
+                self.lang = app.lang;
                 if app.should_quit {
                     self.quit = true;
                     return;
@@ -125,7 +128,7 @@ impl Tui {
 
     pub fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
-            Screen::Browse(browser) => browser::render(frame, browser),
+            Screen::Browse(browser) => browser::render(frame, browser, self.lang),
             Screen::Results(app) => ui::render(frame, app),
         }
     }

@@ -531,3 +531,181 @@ fn mouse_events_reach_the_active_screen() {
     };
     assert_eq!(browser.selected, 2);
 }
+
+fn app_in(lang: Lang) -> App {
+    let mut app = App::new(
+        "project".into(),
+        Analysis {
+            files: fixtures::files(),
+            assessments: crate::assess::assess_all(
+                &fixtures::assessments()
+                    .iter()
+                    .map(|a| a.finding.clone())
+                    .collect::<Vec<_>>(),
+                crate::knowledge::KnowledgeBase::embedded(),
+                lang,
+            ),
+        },
+        "2026-11".into(),
+        false,
+        Confidence::Low,
+        lang,
+    );
+    app.tab = Tab::Findings;
+    app
+}
+
+#[test]
+fn the_findings_page_in_portuguese() {
+    let screen = draw(&mut app_in(Lang::PtBr), 130, 34);
+    for expected in [
+        "1 Visão geral",
+        "2 Achados (3)",
+        "4 arquivo(s) · base de conhecimento 2026-11",
+        "Achados (3)",
+        "ALTA",
+        "troca de chaves",
+        "Detalhes",
+        "Urgência",
+        "alta",
+        "quebrado pelo algoritmo de Shor",
+        "Propósito",
+        "Biblioteca",
+        "Confiança",
+        "Alta",
+        "Local",
+        "Código",
+        "Por que importa",
+        "Substituir por",
+        "3 uso(s)",
+        "2 quebrado(s)",
+        "ocultar seguros: desativado · confiança mínima: Baixa",
+        "sair",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+    assert!(!screen.contains("Why it matters"), "{screen}");
+}
+
+#[test]
+fn the_overview_in_portuguese() {
+    let mut app = app_in(Lang::PtBr);
+    app.handle_key(KeyCode::Char('1'));
+    let screen = draw(&mut app, 130, 34);
+    for expected in [
+        "Vulneráveis a quânticos",
+        "quebrados por Shor",
+        "Enfraquecidos",
+        "Já seguros",
+        "sem necessidade de migração",
+        "Por urgência",
+        "Algoritmos mais usados",
+        "Revisar primeiro",
+        "Linguagens",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+}
+
+#[test]
+fn the_help_in_portuguese_fits_and_lists_the_language_key() {
+    let mut app = app_in(Lang::PtBr);
+    app.handle_key(KeyCode::Char('?'));
+    let screen = draw(&mut app, 100, 34);
+    for expected in [
+        "Ajuda",
+        "selecionar um achado",
+        "analisar a pasta de novo",
+        "trocar o idioma",
+        "ALTA  troca de chaves",
+        "BAIXA enfraquecido pelo algoritmo de Grover",
+        "seguro, ou já pós-quântico",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+}
+
+#[test]
+fn the_l_key_switches_the_language_and_rewrites_the_advice() {
+    let mut app = app();
+    assert!(draw(&mut app, 130, 34).contains("Why it matters"));
+    let before = app.selected_assessment().unwrap().advice.clone();
+
+    app.handle_key(KeyCode::Char('L'));
+    assert_eq!(app.lang, Lang::PtBr);
+    let screen = draw(&mut app, 130, 34);
+    assert!(screen.contains("Por que importa"), "{screen}");
+    assert_ne!(app.selected_assessment().unwrap().advice, before);
+    assert!(
+        app.selected_assessment().unwrap().advice[0].contains("esquema híbrido"),
+        "{:?}",
+        app.selected_assessment().unwrap().advice
+    );
+    // The order and the selection do not change with the language.
+    assert_eq!(app.selected_assessment().unwrap().finding.algorithm, "ecdh");
+
+    app.handle_key(KeyCode::Char('L'));
+    assert_eq!(app.lang, Lang::En);
+    assert!(draw(&mut app, 130, 34).contains("Why it matters"));
+}
+
+#[test]
+fn the_language_survives_moving_between_screens() {
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
+    tui.handle_key(KeyCode::Char('L'));
+    assert!(draw_tui(&mut tui, 130, 34).contains("Visão geral"));
+
+    tui.handle_key(KeyCode::Char('b'));
+    let browser = draw_tui(&mut tui, 110, 24);
+    for expected in [
+        "Escolha um projeto para analisar",
+        "Analisar esta pasta",
+        "pasta acima",
+        "analisar aqui",
+    ] {
+        assert!(
+            browser.contains(expected),
+            "missing `{expected}` in:\n{browser}"
+        );
+    }
+
+    // Switching back in the browser sticks when a project is opened again.
+    tui.handle_key(KeyCode::Char('L'));
+    assert!(draw_tui(&mut tui, 110, 24).contains("Choose a project to analyze"));
+    tui.handle_key(KeyCode::Char('a'));
+    assert!(draw_tui(&mut tui, 130, 34).contains("Overview"));
+}
+
+#[test]
+fn the_browser_hints_and_errors_are_translated() {
+    let tree = TempTree::new();
+    let mut browser = Browser::new(tree.0.clone());
+    browser.open(tree.0.join("missing"));
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::PtBr);
+    tui.screen = Screen::Browse(browser);
+    let screen = draw_tui(&mut tui, 120, 24);
+    assert!(screen.contains("Projeto Node"), "{screen}");
+    assert!(screen.contains("repositório git"), "{screen}");
+    assert!(screen.contains("Não foi possível abrir"), "{screen}");
+    assert!(screen.contains("Pastas (3)"), "{screen}");
+}
+
+#[test]
+fn the_rescan_status_is_translated() {
+    let mut app = app_in(Lang::PtBr);
+    app.replace(Analysis {
+        files: fixtures::files(),
+        assessments: fixtures::assessments(),
+    });
+    // It is visible even on a terminal too narrow for the whole summary.
+    assert!(draw(&mut app, 80, 24).contains("Análise refeita: 3 uso(s) em 4 arquivo(s)"));
+}

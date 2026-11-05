@@ -1,9 +1,10 @@
 //! State of the terminal interface, independent of how it is drawn.
 
 use crate::analysis::Analysis;
-use crate::assess::{Assessment, Urgency};
+use crate::assess::{Assessment, Urgency, assess_all};
 use crate::finding::{Confidence, QuantumRisk};
-use crate::i18n::Lang;
+use crate::i18n::{Lang, fill};
+use crate::knowledge::KnowledgeBase;
 use crate::report::sort_most_urgent_first;
 use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use ratatui::layout::{Position, Rect};
@@ -114,10 +115,9 @@ impl App {
         self.all = analysis.assessments;
         self.clamp_selection();
         self.detail_scroll = 0;
-        self.status = Some(format!(
-            "Scanned again: {} use(s) in {} file(s)",
-            self.all.len(),
-            self.file_count
+        self.status = Some(fill(
+            self.lang.t().status_rescanned,
+            &[("uses", &self.all.len()), ("files", &self.file_count)],
         ));
     }
 
@@ -215,6 +215,16 @@ impl App {
         self.all.len() - self.visible().len()
     }
 
+    /// Switches the language, rewriting the advice of every finding.
+    pub fn set_lang(&mut self, lang: Lang) {
+        if lang == self.lang {
+            return;
+        }
+        self.lang = lang;
+        let findings: Vec<_> = self.all.iter().map(|a| a.finding.clone()).collect();
+        self.all = assess_all(&findings, KnowledgeBase::embedded(), lang);
+    }
+
     pub fn handle_key(&mut self, key: KeyCode) -> Option<Command> {
         self.status = None;
         match key {
@@ -226,6 +236,7 @@ impl App {
                 }
             }
             KeyCode::Char('?') | KeyCode::F(1) => self.show_help = !self.show_help,
+            KeyCode::Char('L') => self.set_lang(self.lang.other()),
             _ if self.show_help => {}
             KeyCode::Char('1') => self.tab = Tab::Overview,
             KeyCode::Char('2') => self.tab = Tab::Findings,
@@ -341,7 +352,7 @@ impl App {
                 self.selected = index;
                 self.detail_scroll = 0;
             }
-            None => self.status = Some("No finding with that urgency".to_string()),
+            None => self.status = Some(self.lang.t().status_no_finding.to_string()),
         }
     }
 
