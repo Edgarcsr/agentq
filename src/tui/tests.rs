@@ -3,12 +3,13 @@
 use super::app::{App, Tab};
 use super::ui;
 use crate::analysis::Analysis;
+use crate::assess::Urgency;
 use crate::finding::{Confidence, QuantumRisk};
 use crate::report::fixtures;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
-use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 
 fn app_with(assessments: Vec<crate::assess::Assessment>) -> App {
     let analysis = Analysis {
@@ -257,5 +258,137 @@ fn overview_survives_small_terminals() {
         let mut app = app();
         app.handle_key(KeyCode::Char('1'));
         draw(&mut app, width, height);
+    }
+}
+
+fn click(app: &mut App, column: u16, row: u16) {
+    app.handle_mouse(MouseEventKind::Down(MouseButton::Left), column, row);
+}
+
+#[test]
+fn clicking_a_tab_switches_to_it() {
+    let mut app = app();
+    draw(&mut app, 120, 32);
+    let overview = app
+        .areas
+        .tabs
+        .iter()
+        .find(|(_, t)| *t == Tab::Overview)
+        .unwrap()
+        .0;
+    click(&mut app, overview.x + 1, overview.y);
+    assert_eq!(app.tab, Tab::Overview);
+
+    draw(&mut app, 120, 32);
+    let findings = app
+        .areas
+        .tabs
+        .iter()
+        .find(|(_, t)| *t == Tab::Findings)
+        .unwrap()
+        .0;
+    click(&mut app, findings.x + findings.width - 1, findings.y);
+    assert_eq!(app.tab, Tab::Findings);
+}
+
+#[test]
+fn clicking_a_finding_selects_it() {
+    let mut app = app();
+    draw(&mut app, 120, 32);
+    let list = app.areas.list;
+    // Each finding takes two rows: the second row of the third one is still the third.
+    click(&mut app, list.x + 2, list.y + 5);
+    assert_eq!(app.selected, 2);
+    click(&mut app, list.x + 2, list.y);
+    assert_eq!(app.selected, 0);
+    // Below the last finding nothing changes.
+    click(&mut app, list.x + 2, list.y + 8);
+    assert_eq!(app.selected, 0);
+    // Neither does a click outside the list.
+    click(&mut app, 0, 0);
+    assert_eq!(app.selected, 0);
+    assert!(draw(&mut app, 120, 32).contains("ECDH (NIST curves)"));
+}
+
+#[test]
+fn the_wheel_moves_the_selection_over_the_list_and_scrolls_the_details() {
+    let mut app = app();
+    draw(&mut app, 100, 16);
+    let list = app.areas.list;
+    app.handle_mouse(MouseEventKind::ScrollDown, list.x + 1, list.y + 1);
+    app.handle_mouse(MouseEventKind::ScrollDown, list.x + 1, list.y + 1);
+    assert_eq!(app.selected, 2);
+    app.handle_mouse(MouseEventKind::ScrollUp, list.x + 1, list.y + 1);
+    assert_eq!(app.selected, 1);
+
+    draw(&mut app, 100, 16);
+    assert!(app.detail_max_scroll > 0);
+    let details = app.areas.details;
+    app.handle_mouse(MouseEventKind::ScrollDown, details.x + 1, details.y + 1);
+    assert_eq!(app.detail_scroll, 3.min(app.detail_max_scroll));
+    app.handle_mouse(MouseEventKind::ScrollUp, details.x + 1, details.y + 1);
+    assert_eq!(app.detail_scroll, 0);
+}
+
+#[test]
+fn clicking_an_urgency_on_the_overview_opens_its_first_finding() {
+    let mut app = app();
+    app.handle_key(KeyCode::Char('1'));
+    draw(&mut app, 120, 34);
+    let row = |u: Urgency| {
+        app.areas
+            .urgency_rows
+            .iter()
+            .find(|(_, x)| *x == u)
+            .unwrap()
+            .0
+    };
+
+    let medium = row(Urgency::Medium);
+    click(&mut app, medium.x + 2, medium.y);
+    assert_eq!(app.tab, Tab::Findings);
+    assert_eq!(
+        app.selected_assessment().unwrap().finding.algorithm,
+        "ecdsa"
+    );
+
+    app.handle_key(KeyCode::Char('1'));
+    draw(&mut app, 120, 34);
+    let low = app
+        .areas
+        .urgency_rows
+        .iter()
+        .find(|(_, x)| *x == Urgency::Low)
+        .unwrap()
+        .0;
+    click(&mut app, low.x + 2, low.y);
+    // Nothing is LOW in the fixtures: stay on the overview and say so.
+    assert_eq!(app.tab, Tab::Overview);
+    assert!(draw(&mut app, 120, 34).contains("No finding with that urgency"));
+}
+
+#[test]
+fn a_click_closes_the_help_and_the_wheel_is_ignored_meanwhile() {
+    let mut app = app();
+    app.handle_key(KeyCode::Char('?'));
+    draw(&mut app, 100, 30);
+    let list = app.areas.list;
+    app.handle_mouse(MouseEventKind::ScrollDown, list.x + 1, list.y + 1);
+    assert_eq!(app.selected, 0);
+    click(&mut app, list.x + 1, list.y + 3);
+    assert!(!app.show_help);
+    assert_eq!(
+        app.selected, 0,
+        "the click that closes the help does not also select"
+    );
+}
+
+#[test]
+fn mouse_events_on_a_tiny_terminal_do_not_panic() {
+    let mut app = app();
+    draw(&mut app, 5, 3);
+    for (column, row) in [(0, 0), (4, 2), (200, 200)] {
+        click(&mut app, column, row);
+        app.handle_mouse(MouseEventKind::ScrollDown, column, row);
     }
 }
