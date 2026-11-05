@@ -4,7 +4,8 @@ use crate::analysis::Analysis;
 use crate::assess::{Assessment, Urgency};
 use crate::finding::{Confidence, QuantumRisk};
 use crate::report::sort_most_urgent_first;
-use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
+use ratatui::layout::{Position, Rect};
 use ratatui::widgets::ListState;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -23,6 +24,18 @@ pub enum Tab {
     Overview,
     /// The list of findings with their details.
     Findings,
+}
+
+/// Where things were drawn in the last frame, so mouse clicks can be mapped back.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Areas {
+    pub tabs: Vec<(Rect, Tab)>,
+    /// The rows of the findings list (inside its border).
+    pub list: Rect,
+    /// The text area of the details pane.
+    pub details: Rect,
+    /// One row per urgency level on the overview.
+    pub urgency_rows: Vec<(Rect, Urgency)>,
 }
 
 /// How many visible findings fall in each risk class.
@@ -50,6 +63,8 @@ pub struct App {
     /// Largest useful scroll of the details pane; set by the renderer.
     pub detail_max_scroll: u16,
     pub tab: Tab,
+    /// Filled in by the renderer on every frame.
+    pub areas: Areas,
     /// Files per language, most files first.
     languages: Vec<(String, usize)>,
     pub show_help: bool,
@@ -71,6 +86,7 @@ impl App {
             file_count: analysis.files.len(),
             languages: language_counts(&analysis),
             tab: Tab::Overview,
+            areas: Areas::default(),
             knowledge_version,
             all: analysis.assessments,
             hide_safe,
@@ -239,6 +255,87 @@ impl App {
             _ => {}
         }
         None
+    }
+
+    /// Reacts to a mouse event at the given terminal cell.
+    ///
+    /// Click a tab to switch to it, a finding to select it, or an urgency on
+    /// the overview to jump to its first finding. The wheel moves the selection
+    /// over the list and scrolls the details when over them.
+    pub fn handle_mouse(&mut self, kind: MouseEventKind, column: u16, row: u16) {
+        self.status = None;
+        let at = Position::new(column, row);
+        match kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if self.show_help {
+                    self.show_help = false;
+                    return;
+                }
+                if let Some(tab) = self
+                    .areas
+                    .tabs
+                    .iter()
+                    .find(|(area, _)| area.contains(at))
+                    .map(|(_, tab)| *tab)
+                {
+                    self.tab = tab;
+                    return;
+                }
+                match self.tab {
+                    Tab::Overview => {
+                        let clicked = self
+                            .areas
+                            .urgency_rows
+                            .iter()
+                            .find(|(area, _)| area.contains(at))
+                            .map(|(_, urgency)| *urgency);
+                        if let Some(urgency) = clicked {
+                            self.jump_to(urgency);
+                        }
+                    }
+                    Tab::Findings => {
+                        if self.areas.list.contains(at) {
+                            // Each finding takes two rows.
+                            let rows_down = usize::from(row - self.areas.list.y) / 2;
+                            let index = self.list_state.offset() + rows_down;
+                            if index < self.visible().len() {
+                                self.select(index);
+                            }
+                        }
+                    }
+                }
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp if !self.show_help => {
+                if self.tab != Tab::Findings {
+                    return;
+                }
+                let down = kind == MouseEventKind::ScrollDown;
+                if self.areas.list.contains(at) {
+                    let next = if down {
+                        self.selected.saturating_add(1)
+                    } else {
+                        self.selected.saturating_sub(1)
+                    };
+                    self.select(next);
+                } else if self.areas.details.contains(at) {
+                    self.scroll_details(if down { 3 } else { -3 });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Opens the findings on the first one with this urgency.
+    fn jump_to(&mut self, urgency: Urgency) {
+        let first = self.visible().iter().position(|a| a.urgency == urgency);
+        match first {
+            Some(index) => {
+                self.tab = Tab::Findings;
+                self.selected = index;
+                self.detail_scroll = 0;
+            }
+            None => self.status = Some("No finding with that urgency".to_string()),
+        }
     }
 
     fn select(&mut self, index: usize) {

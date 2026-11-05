@@ -12,7 +12,7 @@ use std::path::Path;
 /// Width of the badge column plus the spaces around a bar.
 const BADGE_WIDTH: usize = 7;
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let counts = app.counts();
     let [cards, middle, bottom] = Layout::vertical([
         Constraint::Length(5),
@@ -110,12 +110,19 @@ fn empty(message: &str) -> Vec<Line<'static>> {
     ))]
 }
 
-fn render_urgency(frame: &mut Frame, area: Rect, app: &App) {
+fn render_urgency(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = panel("By urgency");
     let inner = block.inner(area);
     let counts = app.urgency_counts();
     let max = counts.iter().map(|(_, count)| *count).max().unwrap_or(0);
     let width = usize::from(inner.width).saturating_sub(BADGE_WIDTH + 6);
+    for (row, (urgency, _)) in (0u16..).zip(counts.iter()) {
+        if row < inner.height {
+            app.areas
+                .urgency_rows
+                .push((Rect::new(inner.x, inner.y + row, inner.width, 1), *urgency));
+        }
+    }
 
     let lines: Vec<Line> = if max == 0 {
         empty("No cryptographic use to show.")

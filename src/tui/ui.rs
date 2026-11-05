@@ -1,6 +1,6 @@
 //! Drawing of the terminal interface.
 
-use super::app::{App, Tab};
+use super::app::{App, Areas, Tab};
 use super::overview;
 use crate::assess::{Assessment, Urgency};
 use crate::finding::QuantumRisk;
@@ -64,6 +64,7 @@ pub(super) fn panel(title: &str) -> Block<'static> {
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
+    app.areas = Areas::default();
     let [header, body, footer] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(6),
@@ -94,7 +95,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn render_header(frame: &mut Frame, area: Rect, app: &App) {
+fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
     let title = Line::from(vec![
         Span::styled(
             " agentq ",
@@ -124,15 +125,27 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         };
         Span::styled(format!(" {label} "), style)
     };
-    let tabs = Line::from(vec![
-        Span::raw(" "),
-        tab("1 Overview".to_string(), app.tab == Tab::Overview),
-        Span::raw(" "),
-        tab(
+    let labels = [
+        ("1 Overview".to_string(), Tab::Overview),
+        (
             format!("2 Findings ({})", app.visible().len()),
-            app.tab == Tab::Findings,
+            Tab::Findings,
         ),
-    ]);
+    ];
+    let mut spans = vec![Span::raw(" ")];
+    let mut x = area.x.saturating_add(1);
+    for (label, which) in &labels {
+        let span = tab(label.clone(), app.tab == *which);
+        let width = span.width() as u16;
+        app.areas.tabs.push((
+            Rect::new(x, area.y.saturating_add(1), width, 1).intersection(area),
+            *which,
+        ));
+        x = x.saturating_add(width).saturating_add(1);
+        spans.push(span);
+        spans.push(Span::raw(" "));
+    }
+    let tabs = Line::from(spans);
 
     let block = Block::new()
         .borders(Borders::BOTTOM)
@@ -173,6 +186,7 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
 
     let title = format!("Findings ({})", items.len());
+    app.areas.list = panel(&title).inner(area);
     if items.is_empty() {
         let hidden = app.hidden();
         let message = if hidden > 0 {
@@ -334,6 +348,7 @@ fn detail_lines(a: &Assessment, root: &str) -> Vec<Line<'static>> {
 fn render_details(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = panel("Details");
     let inner = block.inner(area);
+    app.areas.details = inner;
     let Some(assessment) = app.selected_assessment() else {
         let empty = Paragraph::new("Nothing selected.")
             .style(Style::new().fg(MUTED))
