@@ -6,171 +6,170 @@
 <title>Por que o agentq usa tree-sitter</title>
 <style>
   :root {
-    --bg: #0b0705;
-    --app-bg: #100b08;
-    --panel: #17110c;
-    --border: #33271d;
-    --fg: #f5ece4;
-    --muted: #a08f80;
+    --bg: #161513;
+    --panel: #1c1a18;
+    --raised: #262421;
+    --border: rgb(239 233 222 / 0.08);
+    --fg: #efe9de;
+    --fg-2: #aaa398;
+    --muted: #8a847a;
     --accent: #ff8a3d;
-    --accent-2: #ffd2a1;
-    --accent-deep: #ff7a1a;
-    --bad: #ff6b5b;
-    --font: -apple-system, "SF Pro Display", "Helvetica Neue", Inter, system-ui, sans-serif;
+    --bad: #e5484d;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --font: -apple-system, "SF Pro Text", "Helvetica Neue", Inter, system-ui, sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; }
   html { scroll-behavior: smooth; }
   body {
-    background:
-      radial-gradient(900px 480px at 50% -80px, rgb(255 138 61 / 0.14), transparent 70%),
-      radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px) 0 0 / 22px 22px,
-      var(--bg);
+    background: var(--bg);
     color: var(--fg);
     font-family: var(--font);
+    font-size: 16px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 980px; margin: 0 auto; padding: 0 24px 96px; }
-  section { padding: 72px 0 0; }
-  h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.08; letter-spacing: -0.03em; }
-  h2 { font-size: clamp(24px, 3.4vw, 32px); letter-spacing: -0.02em; line-height: 1.2; }
-  h3 { font-size: 16px; font-weight: 600; }
-  p.lead { color: var(--muted); font-size: 18px; max-width: 62ch; margin-top: 14px; }
-  .eyebrow {
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
-    color: var(--accent); margin-bottom: 14px; display: block;
-  }
-  .brand { color: var(--accent); font-weight: 700; }
+  main { max-width: 960px; margin: 0 auto; padding: 0 24px 96px; }
+  section { padding: 80px 0 0; }
+  h1 { font-size: clamp(36px, 6vw, 56px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 500; }
+  h2 { font-size: clamp(24px, 3.4vw, 32px); letter-spacing: -0.02em; line-height: 1.2; font-weight: 500; }
+  h3 { font-size: 16px; font-weight: 500; }
+  h3 .sub { color: var(--muted); font-weight: 400; }
+  p.lead { color: var(--fg-2); font-size: 18px; line-height: 28px; max-width: 62ch; margin-top: 16px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; line-height: 16px; color: var(--muted); margin-bottom: 16px; display: block; }
   code, .mono { font-family: var(--mono); }
-  em { font-style: normal; color: var(--accent-2); }
+  code { font-size: 0.92em; }
+  em { font-style: normal; color: var(--fg); }
 
   /* hero */
-  header { padding: 88px 0 8px; }
+  header { padding: 96px 0 0; }
   header h1 span { color: var(--accent); }
   .answer {
-    margin-top: 28px; padding: 18px 22px; border: 1px solid var(--border); border-left: 3px solid var(--accent);
-    background: var(--panel); border-radius: 12px; max-width: 70ch; font-size: 17px;
+    margin-top: 32px; padding: 16px 20px; border: 1px solid var(--border); border-left: 2px solid var(--accent);
+    background: var(--panel); border-radius: 8px; max-width: 70ch; font-size: 16px; color: var(--fg-2);
   }
+  .answer b { color: var(--fg); font-weight: 500; }
 
   /* reveal on scroll */
-  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal { opacity: 0; transform: translateY(12px); transition: opacity .4s var(--ease), transform .4s var(--ease); }
   .reveal.in { opacity: 1; transform: none; }
 
   /* code blocks */
-  .code { font-family: var(--mono); font-size: 13.5px; background: var(--app-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  .line { display: flex; gap: 12px; padding: 9px 14px; align-items: baseline; position: relative;
-    transition: background .3s, opacity .4s; border-bottom: 1px solid rgb(255 255 255 / 0.04); }
+  .code { font-family: var(--mono); font-size: 13px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .line { display: flex; gap: 12px; padding: 8px 12px; align-items: baseline; border-bottom: 1px solid var(--border); transition: background-color .3s var(--ease), opacity .4s var(--ease); }
   .line:last-child { border-bottom: 0; }
-  .ln { color: #5d4d3f; width: 14px; text-align: right; flex: none; }
-  .src { white-space: pre-wrap; word-break: break-word; flex: 1; }
+  .ln { color: var(--muted); width: 16px; text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+  .src { white-space: pre-wrap; word-break: break-word; flex: 1; color: var(--fg); }
   .cm { color: var(--muted); }
-  .st { color: var(--accent-2); }
-  mark { background: transparent; color: inherit; border-radius: 4px; padding: 1px 3px; transition: background .3s, box-shadow .3s; }
-  .tag {
-    font-family: var(--font); font-size: 11.5px; padding: 2px 9px; border-radius: 99px; flex: none;
-    border: 1px solid var(--border); color: var(--muted); opacity: 0; transform: translateX(-6px); transition: all .35s;
-  }
+  .st { color: var(--fg-2); }
+  mark { background: transparent; color: inherit; border-radius: 4px; padding: 0 4px; transition: background-color .3s var(--ease), box-shadow .3s var(--ease); }
+  .tag { font-family: var(--mono); font-size: 12px; line-height: 16px; flex: none; color: var(--muted); opacity: 0; transition: opacity .3s var(--ease); }
 
   /* duel */
-  .duel { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 34px; }
+  .duel { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 32px; }
   @media (max-width: 800px) { .duel { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
-  .panel header { padding: 0 0 14px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 12px; }
+  .panel header { padding: 4px 4px 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .panel header small { color: var(--muted); font-family: var(--mono); font-size: 12px; }
-  .score { margin-top: 14px; display: flex; align-items: baseline; gap: 10px; }
-  .score b { font-size: 40px; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .score span { color: var(--muted); font-size: 14px; }
+  .score { margin-top: 16px; padding: 0 4px 4px; display: flex; align-items: baseline; gap: 12px; }
+  .score b { font-size: 40px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .score span { color: var(--fg-2); font-size: 14px; }
   .grep .score b { color: var(--bad); }
   .tree .score b { color: var(--accent); }
-  .line.scanning { background: rgb(255 138 61 / 0.12); }
-  .grep .line.hit mark { background: rgb(255 107 91 / 0.28); box-shadow: 0 0 0 1px rgb(255 107 91 / 0.6); }
-  .tree .line.ignored { opacity: 0.38; }
-  .tree .line.ignored .tag, .tree .line.real .tag { opacity: 1; transform: none; }
-  .tree .line.real mark { background: rgb(255 138 61 / 0.28); box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgb(255 138 61 / 0.45); }
-  .tree .line.real .tag { color: var(--accent); border-color: var(--accent); }
-  .grep .line.hit .tag { opacity: 1; transform: none; color: var(--bad); border-color: rgb(255 107 91 / 0.5); }
+  .line.scanning { background: var(--raised); }
+  .grep .line.hit mark { background: rgb(229 72 77 / 0.2); box-shadow: 0 0 0 1px rgb(229 72 77 / 0.5); }
+  .tree .line.ignored { opacity: 0.4; }
+  .tree .line.ignored .tag, .tree .line.real .tag, .grep .line.hit .tag { opacity: 1; }
+  .tree .line.real mark { background: rgb(255 138 61 / 0.2); box-shadow: 0 0 0 1px var(--accent); }
+  .tree .line.real .tag { color: var(--accent); }
+  .grep .line.hit .tag { color: var(--bad); }
   .replay {
-    margin-top: 22px; font: inherit; font-size: 14px; color: var(--fg); background: transparent; cursor: pointer;
-    border: 1px solid var(--border); border-radius: 99px; padding: 8px 18px; transition: border-color .2s, color .2s;
+    margin-top: 24px; height: 36px; display: inline-flex; align-items: center; gap: 8px;
+    font: inherit; font-size: 14px; color: var(--fg); background: var(--raised); cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px; padding: 0 16px;
+    transition: border-color .15s var(--ease), color .15s var(--ease), transform .15s var(--ease);
   }
+  .replay svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .replay:hover { border-color: var(--accent); color: var(--accent); }
-  .replay:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .verdict { margin-top: 20px; color: var(--muted); max-width: 70ch; }
-  .verdict b { color: var(--fg); }
+  .replay:active { transform: scale(0.98); }
+  .replay:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .verdict { margin-top: 24px; color: var(--fg-2); max-width: 70ch; }
+  .verdict b { color: var(--fg); font-weight: 500; }
 
   /* tree diagram */
-  .treebox { margin-top: 34px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
-  .treebox .code { margin-bottom: 18px; }
-  .tok { border-radius: 4px; padding: 1px 2px; transition: background .4s, box-shadow .4s; }
-  .tok.on { background: rgb(255 138 61 / 0.22); box-shadow: 0 0 0 1px rgb(255 138 61 / 0.6); }
+  .treebox { margin-top: 32px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+  .treebox .code { margin-bottom: 16px; }
+  .tok { border-radius: 4px; padding: 1px 2px; transition: background-color .3s var(--ease), box-shadow .3s var(--ease); }
+  .tok.on { background: rgb(255 138 61 / 0.2); box-shadow: 0 0 0 1px var(--accent); }
   svg.tree { width: 100%; height: auto; display: block; }
-  .edge { fill: none; stroke: var(--border); stroke-width: 2; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .6s ease, stroke .4s; }
+  .edge { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .5s var(--ease), stroke .3s var(--ease); }
   .edge.on { stroke-dashoffset: 0; stroke: var(--accent); }
-  .node { opacity: 0; transform: scale(.85); transform-box: fill-box; transform-origin: center; transition: opacity .45s, transform .45s; }
+  .node { opacity: 0; transform: translateY(8px); transition: opacity .4s var(--ease), transform .4s var(--ease); }
   .node.on { opacity: 1; transform: none; }
-  .node rect { fill: var(--app-bg); stroke: var(--border); stroke-width: 1.5; }
-  .node.on rect { stroke: var(--accent); }
-  .node.leaf.on rect { fill: rgb(255 138 61 / 0.12); }
-  .node .k { font-family: var(--mono); font-size: 13px; fill: var(--accent-2); text-anchor: middle; }
+  .node rect { fill: var(--bg); stroke: var(--border); stroke-width: 1; }
+  .node.on rect { stroke: rgb(239 233 222 / 0.2); }
+  .node.leaf.on rect { fill: var(--raised); stroke: var(--accent); }
+  .node .k { font-family: var(--mono); font-size: 13px; fill: var(--fg); text-anchor: middle; }
   .node .d { font-family: var(--font); font-size: 12px; fill: var(--muted); text-anchor: middle; }
-  .caption { color: var(--muted); font-size: 15px; margin-top: 8px; min-height: 26px; transition: opacity .3s; }
-  .caption b { color: var(--fg); }
+  .caption { color: var(--fg-2); font-size: 15px; margin-top: 8px; min-height: 28px; }
+  .caption b { color: var(--fg); font-weight: 500; }
 
   /* cards */
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 32px; }
   @media (max-width: 860px) { .cards { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-  .card h3 { color: var(--fg); }
-  .card p { color: var(--muted); font-size: 14.5px; }
-  .card .code { font-size: 12.5px; }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; min-height: 30px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .card h3 { color: var(--fg); padding: 4px 4px 0; }
+  .card p { color: var(--fg-2); font-size: 14px; line-height: 20px; padding: 0 4px 4px; }
+  .card .code { font-size: 12px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; min-height: 28px; padding: 0 4px; }
   .chip {
-    font-family: var(--mono); font-size: 12px; padding: 4px 11px; border-radius: 99px;
-    background: rgb(255 138 61 / 0.14); color: var(--accent); border: 1px solid rgb(255 138 61 / 0.45);
-    opacity: 0; transform: translateY(6px) scale(.9); transition: all .45s cubic-bezier(.2,.9,.3,1.3);
+    font-family: var(--mono); font-size: 12px; line-height: 16px; padding: 4px 8px; border-radius: 6px;
+    background: var(--raised); color: var(--fg); border: 1px solid var(--border);
+    opacity: 0; transform: translateY(8px); transition: opacity .4s var(--ease), transform .4s var(--ease);
   }
   .in .chip { opacity: 1; transform: none; }
-  .in .chip:nth-child(1) { transition-delay: .5s; }
-  .in .chip:nth-child(2) { transition-delay: .9s; }
-  .in .chip:nth-child(3) { transition-delay: 1.3s; }
-  .caret::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
+  .in .chip:nth-child(1) { transition-delay: .4s; }
+  .in .chip:nth-child(2) { transition-delay: .5s; }
+  .in .chip:nth-child(3) { transition-delay: .6s; }
+  .caret::after { content: "▍"; color: var(--accent); }
 
   /* bars */
-  .metrics { margin-top: 34px; display: grid; gap: 26px; }
-  .metric h3 { margin-bottom: 10px; }
-  .barrow { display: grid; grid-template-columns: 150px 1fr 64px; gap: 12px; align-items: center; margin: 7px 0; font-size: 14px; }
-  @media (max-width: 560px) { .barrow { grid-template-columns: 110px 1fr 54px; } }
-  .barrow .name { color: var(--muted); }
+  .metrics { margin-top: 32px; display: grid; gap: 24px; }
+  .metric h3 { margin-bottom: 8px; }
+  .barrow { display: grid; grid-template-columns: 144px 1fr 64px; gap: 12px; align-items: center; margin: 8px 0; font-size: 14px; }
+  @media (max-width: 560px) { .barrow { grid-template-columns: 112px 1fr 56px; } }
+  .barrow .name { color: var(--fg-2); }
   .barrow .val { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
-  .bar { height: 14px; border-radius: 99px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width 1.3s cubic-bezier(.2,.8,.2,1); }
-  .in .bar i { width: var(--w); }
-  .bar.grep i { background: linear-gradient(90deg, #8a3a32, var(--bad)); }
-  .bar.agent i { background: linear-gradient(90deg, var(--accent-deep), var(--accent-2)); }
+  .bar { height: 12px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: left; transition: transform 1s var(--ease); }
+  .in .bar i { transform: scaleX(var(--s)); }
+  .bar.grep i { background: var(--muted); }
+  .bar.agent i { background: var(--accent); }
   .barrow.agent .val { color: var(--accent); }
-  .fine { margin-top: 20px; color: var(--muted); font-size: 14px; max-width: 70ch; border-left: 2px solid var(--border); padding-left: 14px; }
+  .fine { margin-top: 24px; color: var(--fg-2); font-size: 14px; line-height: 20px; max-width: 70ch; border-left: 2px solid var(--border); padding-left: 16px; }
+  .fine b { color: var(--fg); font-weight: 500; }
 
   /* comparison */
-  .tablewrap { overflow-x: auto; margin-top: 34px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
-  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14.5px; }
-  th, td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  .tablewrap { overflow-x: auto; margin-top: 32px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; line-height: 20px; }
+  th, td { padding: 12px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
   tr:last-child td { border-bottom: 0; }
-  th { font-weight: 600; color: var(--fg); background: rgb(255 255 255 / 0.02); }
+  th { font-weight: 500; color: var(--fg); background: var(--raised); }
+  td { color: var(--fg-2); }
   td:first-child { color: var(--muted); width: 22%; }
-  .pick { background: rgb(255 138 61 / 0.08); box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent); }
-  th.pick { color: var(--accent); }
-  .yes { color: var(--accent); }
+  .pick { background: rgb(255 138 61 / 0.06); }
+  th.pick { color: var(--accent); background: rgb(255 138 61 / 0.1); }
+  .yes { color: var(--fg); }
   .no { color: var(--bad); }
-  .mid { color: var(--accent-2); }
+  .mid { color: var(--fg-2); }
 
-  .limits { margin-top: 34px; display: grid; gap: 12px; }
-  .limits li { list-style: none; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--muted); }
-  .limits li b { color: var(--fg); }
-  .limits code { color: var(--accent-2); }
+  .limits { margin-top: 32px; display: grid; gap: 8px; padding: 0; }
+  .limits li { list-style: none; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--fg-2); font-size: 14px; line-height: 20px; }
+  .limits li b { color: var(--fg); font-weight: 500; }
+  .limits code { color: var(--fg); }
+  .limits i { font-style: normal; color: var(--fg); }
 
-  footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; line-height: 20px; }
   footer a { color: var(--accent); }
 
   @media (prefers-reduced-motion: reduce) {
@@ -216,7 +215,7 @@
       <div class="score"><b id="tcount">0</b><span>achado, e é o certo</span></div>
     </div>
   </div>
-  <button class="replay" data-target="duel">↻ Repetir</button>
+  <button class="replay" data-target="duel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Repetir</button>
   <p class="verdict">Na busca por texto, comentários e frases entram na conta e geram <b>falsos alarmes</b>. Quem lê o relatório perde tempo, e perde a confiança na ferramenta.</p>
 </section>
 
@@ -245,7 +244,7 @@
     </svg>
     <p class="caption" id="treecap" aria-live="polite"></p>
   </div>
-  <button class="replay" data-target="treebox">↻ Repetir</button>
+  <button class="replay" data-target="treebox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Repetir</button>
   <p class="verdict">Um comentário ou um texto solto nem aparece como <b>chamada</b> nessa árvore. Por isso o agentq só olha as peças que são chamadas de verdade.</p>
 </section>
 
@@ -293,14 +292,14 @@
 
   <div class="metrics" id="metrics">
     <div class="metric">
-      <h3>Precisão <span style="color:var(--muted);font-weight:400">· dos achados, quantos são reais</span></h3>
-      <div class="barrow"><span class="name">Busca por texto</span><div class="bar grep"><i style="--w:65.2%"></i></div><span class="val">65,2%</span></div>
-      <div class="barrow agent"><span class="name">agentq</span><div class="bar agent"><i style="--w:100%"></i></div><span class="val">100%</span></div>
+      <h3>Precisão <span class="sub">· dos achados, quantos são reais</span></h3>
+      <div class="barrow"><span class="name">Busca por texto</span><div class="bar grep"><i style="--s:.652"></i></div><span class="val">65,2%</span></div>
+      <div class="barrow agent"><span class="name">agentq</span><div class="bar agent"><i style="--s:1"></i></div><span class="val">100%</span></div>
     </div>
     <div class="metric">
-      <h3>Recall <span style="color:var(--muted);font-weight:400">· dos usos reais, quantos foram achados</span></h3>
-      <div class="barrow"><span class="name">Busca por texto</span><div class="bar grep"><i style="--w:62.5%"></i></div><span class="val">62,5%</span></div>
-      <div class="barrow agent"><span class="name">agentq</span><div class="bar agent"><i style="--w:95.8%"></i></div><span class="val">95,8%</span></div>
+      <h3>Recall <span class="sub">· dos usos reais, quantos foram achados</span></h3>
+      <div class="barrow"><span class="name">Busca por texto</span><div class="bar grep"><i style="--s:.625"></i></div><span class="val">62,5%</span></div>
+      <div class="barrow agent"><span class="name">agentq</span><div class="bar agent"><i style="--s:.958"></i></div><span class="val">95,8%</span></div>
     </div>
   </div>
   <p class="fine"><b>Atenção:</b> o conjunto de teste foi escrito por nós, depois da ferramenta. Esses números mostram a diferença para uma busca simples e protegem contra regressões, mas ainda não provam o desempenho em código de terceiros. Essa validação, em repositórios reais, é um próximo passo.</p>
@@ -415,13 +414,14 @@
   async function typeLoc() {
     var t = token('loc');
     var text = 'src/server.js:3:35';
-    if (reduce) { loc.textContent = text; return; }
+    if (reduce) { loc.textContent = text; loc.classList.remove('caret'); return; }
     loc.textContent = '';
     for (var i = 1; i <= text.length; i++) {
       if (!live('loc', t)) return;
       loc.textContent = text.slice(0, i);
       await wait(95);
     }
+    loc.classList.remove('caret');
   }
 
   var starters = { duel: playDuel, treebox: playTree };
