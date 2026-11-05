@@ -1,9 +1,11 @@
 use crate::analyzer::Analyzer;
-use crate::detect::Language;
+use crate::assess::{Assessment, assess_all};
+use crate::detect::{Language, scan_source_files};
 use crate::finding::Finding;
+use crate::knowledge::KnowledgeBase;
 use crate::modules::javascript::JavaScriptAnalyzer;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The analyzer for `language`, if one exists yet.
 fn analyzer_for(language: Language) -> Option<&'static dyn Analyzer> {
@@ -27,4 +29,21 @@ pub fn analyze_files(files: &[(PathBuf, Language)]) -> Vec<Finding> {
         .collect();
     findings.sort_by(|a, b| (&a.file, a.line, a.column).cmp(&(&b.file, b.line, b.column)));
     findings
+}
+
+/// Everything found in one directory, before any filtering.
+pub struct Analysis {
+    /// Source files of supported languages, sorted by path.
+    pub files: Vec<(PathBuf, Language)>,
+    /// Every finding, assessed against the embedded knowledge base.
+    pub assessments: Vec<Assessment>,
+}
+
+/// Scans `root`, analyzes every supported file and assesses the findings.
+pub fn analyze_directory(root: &Path) -> Analysis {
+    let mut files = scan_source_files(root);
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let findings = analyze_files(&files);
+    let assessments = assess_all(&findings, KnowledgeBase::embedded());
+    Analysis { files, assessments }
 }

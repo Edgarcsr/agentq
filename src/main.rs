@@ -1,6 +1,4 @@
-use agentq::analysis::analyze_files;
-use agentq::assess::assess_all;
-use agentq::detect::scan_source_files;
+use agentq::analysis::analyze_directory;
 use agentq::finding::{Confidence, QuantumRisk};
 use agentq::knowledge::KnowledgeBase;
 use agentq::report::{Format, Report, render};
@@ -77,22 +75,19 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let mut files = scan_source_files(&args.path);
-    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let analysis = analyze_directory(&args.path);
 
     let min_confidence = Confidence::from(args.min_confidence);
-    let mut findings = analyze_files(&files);
-    findings.retain(|finding| finding.confidence >= min_confidence);
-
-    let knowledge = KnowledgeBase::embedded();
-    let mut assessments = assess_all(&findings, knowledge);
+    let mut assessments = analysis.assessments;
+    assessments.retain(|assessment| assessment.finding.confidence >= min_confidence);
     if args.hide_safe {
         assessments.retain(|assessment| assessment.risk != QuantumRisk::Safe);
     }
 
+    let knowledge = KnowledgeBase::embedded();
     let report = Report {
         root: args.path.display().to_string(),
-        files: &files,
+        files: &analysis.files,
         assessments,
         knowledge_version: knowledge.version.clone(),
     };

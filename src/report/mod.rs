@@ -88,17 +88,22 @@ impl Report<'_> {
     /// Assessments ordered by urgency (highest first), then by location.
     pub fn sorted_assessments(&self) -> Vec<&Assessment> {
         let mut sorted: Vec<&Assessment> = self.assessments.iter().collect();
-        sorted.sort_by(|a, b| {
-            b.urgency.cmp(&a.urgency).then_with(|| {
-                (&a.finding.file, a.finding.line, a.finding.column).cmp(&(
-                    &b.finding.file,
-                    b.finding.line,
-                    b.finding.column,
-                ))
-            })
-        });
+        sort_most_urgent_first(&mut sorted);
         sorted
     }
+}
+
+/// Orders assessments by urgency (highest first), then by file, line and column.
+pub fn sort_most_urgent_first(assessments: &mut [&Assessment]) {
+    assessments.sort_by(|a, b| {
+        b.urgency.cmp(&a.urgency).then_with(|| {
+            (&a.finding.file, a.finding.line, a.finding.column).cmp(&(
+                &b.finding.file,
+                b.finding.line,
+                b.finding.column,
+            ))
+        })
+    });
 }
 
 pub fn render(report: &Report, format: Format) -> String {
