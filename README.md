@@ -96,11 +96,19 @@ cargo run -- <directory>                      # defaults to the current director
 cargo run -- <directory> --format markdown    # text (default), json, or markdown
 cargo run -- <directory> -o report.json -f json
 cargo run -- <directory> --hide-safe --min-confidence medium
-cargo run -- <directory> --tui                # browse the findings interactively
+cargo run -- --tui                            # pick a project, then browse the findings
+cargo run -- <directory> --tui                # browse the findings of a project
 cargo run -- samples/node-shop --tui          # try it on the bundled sample shop
 ```
 
-The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) lists the findings most urgent first on the left and shows the selected one on the right: what the code does, why it is a risk, and what to replace it with. Keys: `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `?` help, `q` quit.
+The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) has two pages, switched with `1`, `2` or `Tab`:
+
+- **Overview**: files scanned, how many uses are quantum-vulnerable, weakened or already safe, a chart by urgency, the most used algorithms, the files to review first and the language share. Click an urgency to jump to its first finding.
+- **Findings**: the list on the left, most urgent first, and the selected one on the right: what the code does, why it is a risk, and what to replace it with.
+
+Run `cargo run -- --tui` **without a path** to pick the project in a folder browser (folders with a `package.json` or a `.git` are marked); press `b` at any time to choose another one.
+
+Keys: `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
 
 Example, scanning a test fixture:
 

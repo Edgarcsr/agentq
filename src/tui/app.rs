@@ -15,6 +15,8 @@ use std::path::PathBuf;
 pub enum Command {
     /// Analyze the directory again.
     Rescan,
+    /// Go back to choosing a project.
+    OpenBrowser,
 }
 
 /// The two pages of the results screen.
@@ -252,6 +254,7 @@ impl App {
                 self.filters_changed();
             }
             KeyCode::Char('r') => return Some(Command::Rescan),
+            KeyCode::Char('b') => return Some(Command::OpenBrowser),
             _ => {}
         }
         None
