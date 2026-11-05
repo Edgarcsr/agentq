@@ -1,5 +1,6 @@
 use agentq::analysis::analyze_directory;
 use agentq::finding::{Confidence, QuantumRisk};
+use agentq::i18n::Lang;
 use agentq::knowledge::KnowledgeBase;
 use agentq::report::{Format, Report, render};
 use clap::{Parser, ValueEnum};
@@ -31,9 +32,18 @@ struct Args {
     #[arg(long)]
     hide_safe: bool,
 
+    /// Language of the interface and reports: en or pt-BR (default: from the
+    /// environment, else en).
+    #[arg(long, value_parser = parse_lang)]
+    lang: Option<Lang>,
+
     /// Browse the findings in an interactive terminal interface.
     #[arg(short, long, conflicts_with_all = ["format", "output"])]
     tui: bool,
+}
+
+fn parse_lang(tag: &str) -> Result<Lang, String> {
+    Lang::parse(tag).ok_or_else(|| format!("unknown language `{tag}`; use en or pt-BR"))
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -80,11 +90,14 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
+    let lang = args.lang.unwrap_or_else(Lang::detect);
+
     if args.tui {
         return match agentq::tui::run(
             args.path.as_deref(),
             args.hide_safe,
             args.min_confidence.into(),
+            lang,
         ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -95,7 +108,7 @@ fn main() -> ExitCode {
     }
 
     let path = args.path.unwrap_or_else(|| PathBuf::from("."));
-    let analysis = analyze_directory(&path);
+    let analysis = analyze_directory(&path, lang);
 
     let min_confidence = Confidence::from(args.min_confidence);
     let mut assessments = analysis.assessments;
@@ -110,6 +123,7 @@ fn main() -> ExitCode {
         files: &analysis.files,
         assessments,
         knowledge_version: knowledge.version.clone(),
+        lang,
     };
     let rendered = render(&report, args.format.into());
 

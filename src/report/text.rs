@@ -1,15 +1,23 @@
-use super::{Report, implementations, key_size_label, recommendation_names, urgency_name};
+use super::{Report, implementations, key_size_label, recommendation_names};
 use crate::assess::Urgency;
+use crate::i18n::fill;
 use std::fmt::Write;
 
 pub fn render(report: &Report) -> String {
+    let lang = report.lang;
+    let t = lang.t();
     let summary = report.summary();
     let mut out = String::new();
 
-    writeln!(out, "agentq report for {}", report.root).unwrap();
-    writeln!(out, "knowledge base: {}\n", report.knowledge_version).unwrap();
+    writeln!(out, "{}", fill(t.report_title, &[("root", &report.root)])).unwrap();
+    writeln!(
+        out,
+        "{}\n",
+        fill(t.report_kb, &[("version", &report.knowledge_version)])
+    )
+    .unwrap();
 
-    writeln!(out, "Files").unwrap();
+    writeln!(out, "{}", t.report_files).unwrap();
     for (path, language) in report.files {
         writeln!(
             out,
@@ -22,41 +30,54 @@ pub fn render(report: &Report) -> String {
     }
     writeln!(
         out,
-        "\n{} file(s) detected in {}\n",
-        report.files.len(),
-        report.root
+        "\n{}\n",
+        fill(
+            t.report_files_detected,
+            &[("n", &report.files.len()), ("root", &report.root)]
+        )
     )
     .unwrap();
 
-    writeln!(out, "Summary").unwrap();
-    writeln!(out, "  {} cryptographic use(s) found", summary.findings).unwrap();
+    writeln!(out, "{}", t.report_summary).unwrap();
+    writeln!(
+        out,
+        "  {}",
+        fill(t.report_uses_found, &[("n", &summary.findings)])
+    )
+    .unwrap();
     for (risk, count) in &summary.by_risk {
-        writeln!(out, "  {count:>4} {risk}").unwrap();
+        writeln!(out, "  {count:>4} {}", lang.risk_key(risk)).unwrap();
     }
     if summary.findings > 0 {
         let urgent = summary.by_urgency.get("high").copied().unwrap_or(0);
-        writeln!(out, "  {urgent:>4} need urgent attention").unwrap();
+        writeln!(
+            out,
+            "  {}",
+            fill(t.report_need_urgent, &[("n", &format!("{urgent:>4}"))])
+        )
+        .unwrap();
     }
 
     if report.assessments.is_empty() {
         return out;
     }
-    writeln!(out, "\nFindings (most urgent first)").unwrap();
+    writeln!(out, "\n{}", t.report_findings_ranked).unwrap();
     for assessment in report.sorted_assessments() {
         let finding = &assessment.finding;
         writeln!(
             out,
             "\n[{}] {} ({}) {} {}",
-            urgency_name(assessment.urgency).to_uppercase(),
+            lang.urgency(assessment.urgency).to_uppercase(),
             assessment.algorithm_name,
-            finding.purpose.label(),
+            lang.purpose(finding.purpose),
             key_size_label(finding.key_size),
             format_args!(
-                "{}:{}:{}  (confidence: {:?})",
+                "{}:{}:{}  ({}: {})",
                 finding.file.display(),
                 finding.line,
                 finding.column,
-                finding.confidence
+                t.confidence_label,
+                lang.confidence(finding.confidence)
             )
         )
         .unwrap();
@@ -64,17 +85,23 @@ pub fn render(report: &Report) -> String {
         if assessment.urgency == Urgency::None {
             continue;
         }
-        writeln!(out, "    Why: {}", assessment.explanation).unwrap();
+        writeln!(out, "    {}: {}", t.why, assessment.explanation).unwrap();
         let names = recommendation_names(assessment);
         if !names.is_empty() {
-            writeln!(out, "    Replace with: {}", names.join(", ")).unwrap();
+            writeln!(out, "    {}: {}", t.replace_with, names.join(", ")).unwrap();
             let implementations = implementations(assessment);
             if !implementations.is_empty() {
-                writeln!(out, "    Implementations: {}", implementations.join(", ")).unwrap();
+                writeln!(
+                    out,
+                    "    {}: {}",
+                    t.implementations,
+                    implementations.join(", ")
+                )
+                .unwrap();
             }
         }
         for advice in &assessment.advice {
-            writeln!(out, "    Note: {advice}").unwrap();
+            writeln!(out, "    {}: {advice}", t.note).unwrap();
         }
     }
     out
@@ -114,9 +141,45 @@ mod tests {
             files: &[],
             assessments: vec![],
             knowledge_version: "t".into(),
+            lang: crate::i18n::Lang::En,
         };
         let text = render(&report);
         assert!(text.contains("0 cryptographic use(s) found"));
         assert!(!text.contains("Findings"));
+    }
+
+    #[test]
+    fn portuguese_report_translates_labels_and_advice() {
+        let files = fixtures::files();
+        let mut report = fixtures::report(&files);
+        report.lang = crate::i18n::Lang::PtBr;
+        report.assessments = crate::assess::assess_all(
+            &fixtures::assessments()
+                .iter()
+                .map(|a| a.finding.clone())
+                .collect::<Vec<_>>(),
+            crate::knowledge::KnowledgeBase::embedded(),
+            crate::i18n::Lang::PtBr,
+        );
+        let text = render(&report);
+        for expected in [
+            "Relatório do agentq para project",
+            "base de conhecimento:",
+            "4 arquivo(s) detectado(s) em project",
+            "3 uso(s) de criptografia encontrado(s)",
+            "quebrado",
+            "precisam de atenção urgente",
+            "Achados (mais urgentes primeiro)",
+            "[ALTA] ECDH (NIST curves) (troca de chaves) 256-bit",
+            "confiança: Alta",
+            "Por quê:",
+            "Substituir por: ML-KEM (CRYSTALS-Kyber)",
+            "Implementações:",
+            "Nota:",
+            "[NENHUMA]",
+        ] {
+            assert!(text.contains(expected), "missing `{expected}` in:\n{text}");
+        }
+        assert!(!text.contains("Replace with"), "{text}");
     }
 }

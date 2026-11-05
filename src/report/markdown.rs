@@ -1,4 +1,4 @@
-use super::{Report, implementations, key_size_label, recommendation_names, urgency_name};
+use super::{Report, implementations, key_size_label, recommendation_names};
 use std::fmt::Write;
 
 /// Escapes text for use inside a table cell.
@@ -7,21 +7,33 @@ fn cell(text: &str) -> String {
 }
 
 pub fn render(report: &Report) -> String {
+    let lang = report.lang;
+    let t = lang.t();
     let summary = report.summary();
     let mut out = String::new();
 
-    writeln!(out, "# agentq report\n").unwrap();
-    writeln!(out, "- **Analyzed:** `{}`", report.root).unwrap();
-    writeln!(out, "- **Files detected:** {}", summary.files).unwrap();
-    writeln!(out, "- **Cryptographic uses found:** {}", summary.findings).unwrap();
-    writeln!(out, "- **Knowledge base:** {}\n", report.knowledge_version).unwrap();
+    writeln!(out, "# {}\n", t.md_title).unwrap();
+    writeln!(out, "- **{}:** `{}`", t.md_analyzed, report.root).unwrap();
+    writeln!(out, "- **{}:** {}", t.md_files_detected, summary.files).unwrap();
+    writeln!(out, "- **{}:** {}", t.md_uses_found, summary.findings).unwrap();
+    writeln!(
+        out,
+        "- **{}:** {}\n",
+        t.md_knowledge_base, report.knowledge_version
+    )
+    .unwrap();
 
-    writeln!(out, "## Summary\n").unwrap();
-    writeln!(out, "| Risk | Count |\n| --- | ---: |").unwrap();
+    writeln!(out, "## {}\n", t.report_summary).unwrap();
+    writeln!(out, "| {} | {} |\n| --- | ---: |", t.md_risk, t.md_count).unwrap();
     for (risk, count) in &summary.by_risk {
-        writeln!(out, "| {risk} | {count} |").unwrap();
+        writeln!(out, "| {} | {count} |", lang.risk_key(risk)).unwrap();
     }
-    writeln!(out, "\n| Language | Files | Share |\n| --- | ---: | ---: |").unwrap();
+    writeln!(
+        out,
+        "\n| {} | {} | {} |\n| --- | ---: | ---: |",
+        t.md_language, t.report_files, t.md_share
+    )
+    .unwrap();
     for (language, share) in &summary.languages {
         writeln!(
             out,
@@ -35,11 +47,12 @@ pub fn render(report: &Report) -> String {
         return out;
     }
 
-    writeln!(out, "\n## Findings\n").unwrap();
+    writeln!(out, "\n## {}\n", t.md_findings).unwrap();
     writeln!(
         out,
-        "| Urgency | Algorithm | Purpose | Key size | Location | Replace with |\n\
-         | --- | --- | --- | --- | --- | --- |"
+        "| {} | {} | {} | {} | {} | {} |\n\
+         | --- | --- | --- | --- | --- | --- |",
+        t.md_urgency, t.md_algorithm, t.md_purpose, t.md_key_size, t.md_location, t.replace_with
     )
     .unwrap();
     let sorted = report.sorted_assessments();
@@ -48,9 +61,9 @@ pub fn render(report: &Report) -> String {
         writeln!(
             out,
             "| {} | {} | {} | {} | `{}:{}` | {} |",
-            urgency_name(assessment.urgency),
+            lang.urgency(assessment.urgency),
             cell(&assessment.algorithm_name),
-            finding.purpose.label(),
+            lang.purpose(finding.purpose),
             key_size_label(finding.key_size),
             finding.file.display(),
             finding.line,
@@ -59,13 +72,14 @@ pub fn render(report: &Report) -> String {
         .unwrap();
     }
 
-    writeln!(out, "\n## Details\n").unwrap();
+    writeln!(out, "\n## {}\n", t.md_details).unwrap();
     for assessment in sorted {
         let finding = &assessment.finding;
         writeln!(
             out,
-            "### {} at `{}:{}:{}`\n",
+            "### {} {} `{}:{}:{}`\n",
             assessment.algorithm_name,
+            t.md_at,
             finding.file.display(),
             finding.line,
             finding.column
@@ -74,24 +88,33 @@ pub fn render(report: &Report) -> String {
         writeln!(out, "```\n{}\n```\n", finding.snippet).unwrap();
         writeln!(
             out,
-            "- **Library:** {}\n- **Confidence:** {:?}\n- **Quantum risk:** {} ({:?})",
+            "- **{}:** {}\n- **{}:** {}\n- **{}:** {} ({:?})",
+            t.md_library,
             finding.library,
-            finding.confidence,
-            super::risk_name(assessment.risk),
+            t.md_confidence,
+            lang.confidence(finding.confidence),
+            t.md_quantum_risk,
+            lang.risk(assessment.risk),
             assessment.attack
         )
         .unwrap();
-        writeln!(out, "- **Why:** {}", assessment.explanation).unwrap();
+        writeln!(out, "- **{}:** {}", t.why, assessment.explanation).unwrap();
         let names = recommendation_names(assessment);
         if !names.is_empty() {
-            writeln!(out, "- **Replace with:** {}", names.join(", ")).unwrap();
+            writeln!(out, "- **{}:** {}", t.replace_with, names.join(", ")).unwrap();
             let implementations = implementations(assessment);
             if !implementations.is_empty() {
-                writeln!(out, "- **Implementations:** {}", implementations.join(", ")).unwrap();
+                writeln!(
+                    out,
+                    "- **{}:** {}",
+                    t.implementations,
+                    implementations.join(", ")
+                )
+                .unwrap();
             }
         }
         for advice in &assessment.advice {
-            writeln!(out, "- **Note:** {advice}").unwrap();
+            writeln!(out, "- **{}:** {advice}", t.note).unwrap();
         }
         writeln!(out).unwrap();
     }
@@ -120,5 +143,29 @@ mod tests {
     #[test]
     fn pipes_in_table_cells_are_escaped() {
         assert_eq!(cell("a | b `c`"), "a \\| b 'c'");
+    }
+
+    #[test]
+    fn portuguese_markdown_translates_headings_and_columns() {
+        let files = fixtures::files();
+        let mut report = fixtures::report(&files);
+        report.lang = crate::i18n::Lang::PtBr;
+        let md = render(&report);
+        for expected in [
+            "# Relatório do agentq",
+            "- **Analisado:** `project`",
+            "## Resumo",
+            "| Risco | Qtde |",
+            "| quebrado | 2 |",
+            "| Linguagem | Arquivos | Participação |",
+            "## Achados",
+            "| Urgência | Algoritmo | Propósito | Tamanho da chave | Local | Substituir por |",
+            "| alta | ECDH (NIST curves) | troca de chaves | 256-bit |",
+            "### ECDH (NIST curves) em `src/b.ts:7:5`",
+            "- **Biblioteca:** node:crypto",
+            "- **Risco quântico:** quebrado (Shor)",
+        ] {
+            assert!(md.contains(expected), "missing `{expected}` in:\n{md}");
+        }
     }
 }

@@ -2,6 +2,7 @@ use crate::analyzer::Analyzer;
 use crate::assess::{Assessment, assess_all};
 use crate::detect::{Language, scan_source_files};
 use crate::finding::Finding;
+use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
 use crate::modules::javascript::JavaScriptAnalyzer;
 use std::fs;
@@ -39,11 +40,12 @@ pub struct Analysis {
     pub assessments: Vec<Assessment>,
 }
 
-/// Scans `root`, analyzes every supported file and assesses the findings.
-pub fn analyze_directory(root: &Path) -> Analysis {
+/// Scans `root`, analyzes every supported file and assesses the findings,
+/// writing the advice in `lang`.
+pub fn analyze_directory(root: &Path, lang: Lang) -> Analysis {
     let mut files = scan_source_files(root);
     files.sort_by(|a, b| a.0.cmp(&b.0));
     let findings = analyze_files(&files);
-    let assessments = assess_all(&findings, KnowledgeBase::embedded());
+    let assessments = assess_all(&findings, KnowledgeBase::embedded(), lang);
     Analysis { files, assessments }
 }

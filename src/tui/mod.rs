@@ -10,6 +10,7 @@ pub use browser::Browser;
 
 use crate::analysis::analyze_directory;
 use crate::finding::Confidence;
+use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
 use browser::Action;
 use ratatui::DefaultTerminal;
@@ -34,18 +35,25 @@ pub struct Tui {
     screen: Screen,
     hide_safe: bool,
     min_confidence: Confidence,
+    lang: Lang,
     quit: bool,
 }
 
 impl Tui {
     /// Starts on the results for `start`, or on the folder browser when there is none.
-    pub fn start(start: Option<&Path>, hide_safe: bool, min_confidence: Confidence) -> Tui {
+    pub fn start(
+        start: Option<&Path>,
+        hide_safe: bool,
+        min_confidence: Confidence,
+        lang: Lang,
+    ) -> Tui {
         let mut tui = Tui {
             screen: Screen::Browse(Browser::new(
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             )),
             hide_safe,
             min_confidence,
+            lang,
             quit: false,
         };
         if let Some(path) = start {
@@ -61,10 +69,11 @@ impl Tui {
     fn open_results(&mut self, path: &Path) {
         let app = App::new(
             path.display().to_string(),
-            analyze_directory(path),
+            analyze_directory(path, self.lang),
             KnowledgeBase::embedded().version.clone(),
             self.hide_safe,
             self.min_confidence,
+            self.lang,
         );
         self.screen = Screen::Results(Box::new(app));
     }
@@ -95,7 +104,7 @@ impl Tui {
                 }
                 let root = PathBuf::from(&app.root);
                 match command {
-                    Some(Command::Rescan) => app.replace(analyze_directory(&root)),
+                    Some(Command::Rescan) => app.replace(analyze_directory(&root, app.lang)),
                     Some(Command::OpenBrowser) => self.open_browser(&root),
                     None => {}
                 }
@@ -126,13 +135,18 @@ impl Tui {
 ///
 /// With `start` it opens on that project's results; without it, on a browser
 /// to pick the project.
-pub fn run(start: Option<&Path>, hide_safe: bool, min_confidence: Confidence) -> io::Result<()> {
+pub fn run(
+    start: Option<&Path>,
+    hide_safe: bool,
+    min_confidence: Confidence,
+    lang: Lang,
+) -> io::Result<()> {
     if !io::stdout().is_terminal() {
         return Err(io::Error::other(
             "the interactive interface needs a terminal; use --format for piped output",
         ));
     }
-    let mut tui = Tui::start(start, hide_safe, min_confidence);
+    let mut tui = Tui::start(start, hide_safe, min_confidence, lang);
     let mut terminal = ratatui::try_init()?;
     // Turn mouse reporting off again even if the program panics.
     let previous_hook = std::panic::take_hook();

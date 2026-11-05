@@ -7,6 +7,7 @@ use super::{Screen, Tui};
 use crate::analysis::Analysis;
 use crate::assess::Urgency;
 use crate::finding::{Confidence, QuantumRisk};
+use crate::i18n::Lang;
 use crate::report::fixtures;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -24,6 +25,7 @@ fn app_with(assessments: Vec<crate::assess::Assessment>) -> App {
         "2026-11".into(),
         false,
         Confidence::Low,
+        Lang::En,
     );
     app.tab = Tab::Findings;
     app
@@ -408,7 +410,7 @@ fn sample() -> std::path::PathBuf {
 #[test]
 fn the_browser_shows_folders_hints_and_the_way_to_analyze() {
     let tree = TempTree::new();
-    let mut tui = Tui::start(None, false, Confidence::Low);
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     tui.screen = Screen::Browse(Browser::new(tree.0.clone()));
     let screen = draw_tui(&mut tui, 110, 22);
     for expected in [
@@ -435,14 +437,14 @@ fn the_browser_explains_when_a_folder_cannot_be_opened() {
     let tree = TempTree::new();
     let mut browser = Browser::new(tree.0.clone());
     browser.open(tree.0.join("missing"));
-    let mut tui = Tui::start(None, false, Confidence::Low);
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     tui.screen = Screen::Browse(browser);
     assert!(draw_tui(&mut tui, 110, 22).contains("Cannot open"));
 }
 
 #[test]
 fn a_path_skips_the_browser() {
-    let tui = Tui::start(Some(&sample()), false, Confidence::Low);
+    let tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
     match &tui.screen {
         Screen::Results(app) => assert_eq!(app.visible().len(), 22),
         Screen::Browse(_) => panic!("expected the results"),
@@ -451,14 +453,14 @@ fn a_path_skips_the_browser() {
 
 #[test]
 fn without_a_path_it_starts_on_the_browser() {
-    let tui = Tui::start(None, false, Confidence::Low);
+    let tui = Tui::start(None, false, Confidence::Low, Lang::En);
     assert!(matches!(tui.screen, Screen::Browse(_)));
 }
 
 #[test]
 fn choosing_a_folder_shows_its_results_and_b_goes_back() {
     let samples = sample().parent().unwrap().to_path_buf();
-    let mut tui = Tui::start(None, true, Confidence::Medium);
+    let mut tui = Tui::start(None, true, Confidence::Medium, Lang::En);
     tui.screen = Screen::Browse(Browser::new(samples.clone()));
 
     // Go into node-shop and analyze it.
@@ -489,18 +491,18 @@ fn choosing_a_folder_shows_its_results_and_b_goes_back() {
 
 #[test]
 fn quitting_works_from_both_screens() {
-    let mut tui = Tui::start(None, false, Confidence::Low);
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     tui.handle_key(KeyCode::Char('q'));
     assert!(tui.should_quit());
 
-    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low);
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
     tui.handle_key(KeyCode::Char('q'));
     assert!(tui.should_quit());
 }
 
 #[test]
 fn rescan_keeps_the_results_screen() {
-    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low);
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
     tui.handle_key(KeyCode::Char('r'));
     let Screen::Results(app) = &tui.screen else {
         panic!("expected the results")
@@ -512,7 +514,7 @@ fn rescan_keeps_the_results_screen() {
 #[test]
 fn mouse_events_reach_the_active_screen() {
     let tree = TempTree::new();
-    let mut tui = Tui::start(None, false, Confidence::Low);
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     tui.screen = Screen::Browse(Browser::new(tree.0.clone()));
     draw_tui(&mut tui, 110, 22);
     let Screen::Browse(browser) = &tui.screen else {

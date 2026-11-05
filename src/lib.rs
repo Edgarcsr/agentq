@@ -4,6 +4,7 @@ pub mod assess;
 pub mod detect;
 pub mod eval;
 pub mod finding;
+pub mod i18n;
 pub mod knowledge;
 pub mod modules;
 pub mod parse;

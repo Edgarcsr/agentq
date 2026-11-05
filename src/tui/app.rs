@@ -3,6 +3,7 @@
 use crate::analysis::Analysis;
 use crate::assess::{Assessment, Urgency};
 use crate::finding::{Confidence, QuantumRisk};
+use crate::i18n::Lang;
 use crate::report::sort_most_urgent_first;
 use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use ratatui::layout::{Position, Rect};
@@ -65,6 +66,7 @@ pub struct App {
     /// Largest useful scroll of the details pane; set by the renderer.
     pub detail_max_scroll: u16,
     pub tab: Tab,
+    pub lang: Lang,
     /// Filled in by the renderer on every frame.
     pub areas: Areas,
     /// Files per language, most files first.
@@ -82,12 +84,14 @@ impl App {
         knowledge_version: String,
         hide_safe: bool,
         min_confidence: Confidence,
+        lang: Lang,
     ) -> App {
         App {
             root,
             file_count: analysis.files.len(),
             languages: language_counts(&analysis),
             tab: Tab::Overview,
+            lang,
             areas: Areas::default(),
             knowledge_version,
             all: analysis.assessments,
@@ -405,6 +409,7 @@ mod tests {
             "test".into(),
             false,
             Confidence::Low,
+            Lang::En,
         );
         app.tab = Tab::Findings;
         app
@@ -539,6 +544,7 @@ mod tests {
             "t".into(),
             false,
             Confidence::Low,
+            Lang::En,
         );
         assert_eq!(app.tab, Tab::Overview);
         // Selection keys do nothing on the overview.

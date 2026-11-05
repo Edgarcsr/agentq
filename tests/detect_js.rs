@@ -712,12 +712,13 @@ fn post_quantum_usage_is_reported_as_safe_algorithms() {
 #[test]
 fn post_quantum_usage_needs_no_migration() {
     use agentq::assess::{Urgency, assess};
+    use agentq::i18n::Lang;
     use agentq::knowledge::KnowledgeBase;
     let findings = JavaScriptAnalyzer.analyze(
         Path::new("a.js"),
         "require('node:crypto').generateKeyPairSync('ml-kem-768');",
     );
-    let assessment = assess(&findings[0], KnowledgeBase::embedded()).unwrap();
+    let assessment = assess(&findings[0], KnowledgeBase::embedded(), Lang::En).unwrap();
     assert_eq!(assessment.urgency, Urgency::None);
 }
 
