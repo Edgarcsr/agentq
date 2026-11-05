@@ -60,6 +60,35 @@ The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)*
 4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml)) that records the quantum attack (Shor or Grover), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them.
 5. **Report.** Text, JSON, or Markdown, most urgent first.
 
+### How it works
+
+Each language is a separate track (an analyzer behind the same `Analyzer` trait) that feeds a shared assessment and report stage. Only the JS/TS track exists today.
+
+```mermaid
+flowchart TD
+    start(["agentq PATH"]) --> scan["Scan<br/>respect .gitignore, skip node_modules, dist, build..."]
+    scan --> route{"Language of<br/>each file"}
+
+    route -->|"JS / TS<br/>.js .jsx .mjs .cjs .ts .tsx .mts .cts"| parse
+    route -->|"Python, Java, Go"| pending["Listed only<br/>analyzers not built yet"]
+
+    subgraph jstrack ["JS/TS track"]
+        direction TB
+        parse["Parse<br/>tree-sitter: JavaScript, TypeScript or TSX"] --> bind["Bindings<br/>follow require, import, aliases, constants"]
+        bind --> rules["Rules per library<br/>node:crypto, Web Crypto, jsonwebtoken, jose,<br/>node-forge, noble, libsodium, ..."]
+        rules --> raw["Findings<br/>file, line, algorithm, purpose, key size, confidence"]
+        raw --> infer["Infer purpose<br/>RSA/EC keys: use other findings and hints in the file"]
+    end
+
+    infer --> assess["Assess<br/>knowledge base: quantum risk, urgency,<br/>alternatives that fit the purpose"]
+    assess --> filter["Filters<br/>--min-confidence, --hide-safe"]
+    filter --> report["Report, most urgent first<br/>text, JSON or Markdown"]
+    pending --> report
+
+    corpus[("Annotated corpus<br/>eval/corpus/node")] -.->|"cargo run --bin eval"| metrics["Precision, recall, F1<br/>vs keyword search"]
+    infer -.-> metrics
+```
+
 Recognized APIs: Node.js `crypto`, Web Crypto (`crypto.subtle`), `jsonwebtoken`, `jose`, `node-forge`, `node-rsa`, `elliptic`, `tweetnacl`, `@noble/curves`, `@noble/ed25519`, `@noble/secp256k1`, `crypto-js`, `jsrsasign`, `openpgp`, and `libsodium`. Post-quantum usage (`ml-kem`, `ml-dsa`, `slh-dsa` in `node:crypto` and `@noble/post-quantum`) is reported as safe.
 
 ```sh
