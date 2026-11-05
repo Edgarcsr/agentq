@@ -1,17 +1,28 @@
 //! State of the terminal interface, independent of how it is drawn.
 
 use crate::analysis::Analysis;
-use crate::assess::Assessment;
+use crate::assess::{Assessment, Urgency};
 use crate::finding::{Confidence, QuantumRisk};
 use crate::report::sort_most_urgent_first;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::widgets::ListState;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 /// Work the event loop must do on behalf of the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     /// Analyze the directory again.
     Rescan,
+}
+
+/// The two pages of the results screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tab {
+    /// Totals and rankings.
+    Overview,
+    /// The list of findings with their details.
+    Findings,
 }
 
 /// How many visible findings fall in each risk class.
@@ -38,6 +49,9 @@ pub struct App {
     pub detail_scroll: u16,
     /// Largest useful scroll of the details pane; set by the renderer.
     pub detail_max_scroll: u16,
+    pub tab: Tab,
+    /// Files per language, most files first.
+    languages: Vec<(String, usize)>,
     pub show_help: bool,
     pub should_quit: bool,
     /// One-line message about the last action, cleared on the next key.
@@ -55,6 +69,8 @@ impl App {
         App {
             root,
             file_count: analysis.files.len(),
+            languages: language_counts(&analysis),
+            tab: Tab::Overview,
             knowledge_version,
             all: analysis.assessments,
             hide_safe,
@@ -72,6 +88,7 @@ impl App {
     /// Replaces the findings after a new analysis, keeping filters and selection.
     pub fn replace(&mut self, analysis: Analysis) {
         self.file_count = analysis.files.len();
+        self.languages = language_counts(&analysis);
         self.all = analysis.assessments;
         self.clamp_selection();
         self.detail_scroll = 0;
@@ -112,6 +129,65 @@ impl App {
         counts
     }
 
+    /// Visible findings per urgency, from the most to the least urgent.
+    pub fn urgency_counts(&self) -> [(Urgency, usize); 4] {
+        let mut counts = [
+            (Urgency::High, 0),
+            (Urgency::Medium, 0),
+            (Urgency::Low, 0),
+            (Urgency::None, 0),
+        ];
+        for assessment in self.visible() {
+            if let Some(entry) = counts.iter_mut().find(|(u, _)| *u == assessment.urgency) {
+                entry.1 += 1;
+            }
+        }
+        counts
+    }
+
+    /// The `limit` algorithms used most often among the visible findings.
+    pub fn top_algorithms(&self, limit: usize) -> Vec<(String, usize)> {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for assessment in self.visible() {
+            *counts.entry(&assessment.algorithm_name).or_default() += 1;
+        }
+        let mut ranked: Vec<(String, usize)> = counts
+            .into_iter()
+            .map(|(name, count)| (name.to_string(), count))
+            .collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        ranked.truncate(limit);
+        ranked
+    }
+
+    /// The `limit` files to look at first: worst urgency, then most findings.
+    pub fn top_files(&self, limit: usize) -> Vec<(PathBuf, usize, Urgency)> {
+        let mut files: BTreeMap<&PathBuf, (usize, Urgency)> = BTreeMap::new();
+        for assessment in self.visible() {
+            let entry = files
+                .entry(&assessment.finding.file)
+                .or_insert((0, Urgency::None));
+            entry.0 += 1;
+            entry.1 = entry.1.max(assessment.urgency);
+        }
+        let mut ranked: Vec<(PathBuf, usize, Urgency)> = files
+            .into_iter()
+            .map(|(file, (count, urgency))| (file.clone(), count, urgency))
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.2.cmp(&a.2)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        ranked.truncate(limit);
+        ranked
+    }
+
+    /// Files per language, most files first.
+    pub fn languages(&self) -> &[(String, usize)] {
+        &self.languages
+    }
+
     /// Number of findings hidden by the filters.
     pub fn hidden(&self) -> usize {
         self.all.len() - self.visible().len()
@@ -129,12 +205,24 @@ impl App {
             }
             KeyCode::Char('?') | KeyCode::F(1) => self.show_help = !self.show_help,
             _ if self.show_help => {}
-            KeyCode::Down | KeyCode::Char('j') => self.select(self.selected.saturating_add(1)),
-            KeyCode::Up | KeyCode::Char('k') => self.select(self.selected.saturating_sub(1)),
-            KeyCode::Home | KeyCode::Char('g') => self.select(0),
-            KeyCode::End | KeyCode::Char('G') => self.select(usize::MAX),
-            KeyCode::PageDown | KeyCode::Char(' ') => self.scroll_details(5),
-            KeyCode::PageUp => self.scroll_details(-5),
+            KeyCode::Char('1') => self.tab = Tab::Overview,
+            KeyCode::Char('2') => self.tab = Tab::Findings,
+            KeyCode::Tab | KeyCode::BackTab => self.tab = self.tab.other(),
+            KeyCode::Enter if self.tab == Tab::Overview => self.tab = Tab::Findings,
+            KeyCode::Down | KeyCode::Char('j') if self.tab == Tab::Findings => {
+                self.select(self.selected.saturating_add(1))
+            }
+            KeyCode::Up | KeyCode::Char('k') if self.tab == Tab::Findings => {
+                self.select(self.selected.saturating_sub(1))
+            }
+            KeyCode::Home | KeyCode::Char('g') if self.tab == Tab::Findings => self.select(0),
+            KeyCode::End | KeyCode::Char('G') if self.tab == Tab::Findings => {
+                self.select(usize::MAX)
+            }
+            KeyCode::PageDown | KeyCode::Char(' ') if self.tab == Tab::Findings => {
+                self.scroll_details(5)
+            }
+            KeyCode::PageUp if self.tab == Tab::Findings => self.scroll_details(-5),
             KeyCode::Char('s') => {
                 self.hide_safe = !self.hide_safe;
                 self.filters_changed();
@@ -179,6 +267,28 @@ impl App {
     }
 }
 
+impl Tab {
+    pub fn other(self) -> Tab {
+        match self {
+            Tab::Overview => Tab::Findings,
+            Tab::Findings => Tab::Overview,
+        }
+    }
+}
+
+fn language_counts(analysis: &Analysis) -> Vec<(String, usize)> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for (_, language) in &analysis.files {
+        *counts.entry(language.label()).or_default() += 1;
+    }
+    let mut ranked: Vec<(String, usize)> = counts
+        .into_iter()
+        .map(|(label, count)| (label.to_string(), count))
+        .collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    ranked
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,13 +299,15 @@ mod tests {
             files: fixtures::files(),
             assessments: fixtures::assessments(),
         };
-        App::new(
+        let mut app = App::new(
             "project".into(),
             analysis,
             "test".into(),
             false,
             Confidence::Low,
-        )
+        );
+        app.tab = Tab::Findings;
+        app
     }
 
     fn algorithms(app: &App) -> Vec<String> {
@@ -313,5 +425,69 @@ mod tests {
         assert_eq!(app.selected, 0);
         assert!(app.visible().is_empty());
         assert!(app.status.as_deref().unwrap().contains("0 use(s)"));
+    }
+
+    #[test]
+    fn starts_on_the_overview_and_switches_tabs() {
+        let analysis = Analysis {
+            files: fixtures::files(),
+            assessments: fixtures::assessments(),
+        };
+        let mut app = App::new(
+            "project".into(),
+            analysis,
+            "t".into(),
+            false,
+            Confidence::Low,
+        );
+        assert_eq!(app.tab, Tab::Overview);
+        // Selection keys do nothing on the overview.
+        app.handle_key(KeyCode::Down);
+        assert_eq!(app.selected, 0);
+        app.handle_key(KeyCode::Char('2'));
+        assert_eq!(app.tab, Tab::Findings);
+        app.handle_key(KeyCode::Tab);
+        assert_eq!(app.tab, Tab::Overview);
+        app.handle_key(KeyCode::Enter);
+        assert_eq!(app.tab, Tab::Findings);
+        app.handle_key(KeyCode::Char('1'));
+        assert_eq!(app.tab, Tab::Overview);
+    }
+
+    #[test]
+    fn overview_numbers_follow_the_visible_findings() {
+        let mut app = app();
+        assert_eq!(
+            app.urgency_counts(),
+            [
+                (Urgency::High, 1),
+                (Urgency::Medium, 1),
+                (Urgency::Low, 0),
+                (Urgency::None, 1)
+            ]
+        );
+        let algorithms: Vec<_> = app.top_algorithms(5).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(algorithms, ["ECDH (NIST curves)", "ECDSA", "SHA-256"]);
+        assert_eq!(app.top_algorithms(1).len(), 1);
+
+        let files = app.top_files(5);
+        // src/a.js holds a medium and a safe finding, src/b.ts a high one.
+        assert_eq!(files[0].0, PathBuf::from("src/b.ts"));
+        assert_eq!(files[0].2, Urgency::High);
+        assert_eq!(
+            (files[1].0.clone(), files[1].1),
+            (PathBuf::from("src/a.js"), 2)
+        );
+
+        assert_eq!(
+            app.languages(),
+            [
+                ("JS/TS".to_string(), 2),
+                ("Go".to_string(), 1),
+                ("Python".to_string(), 1)
+            ]
+        );
+        app.handle_key(KeyCode::Char('s'));
+        assert_eq!(app.urgency_counts()[3].1, 0);
     }
 }

@@ -1,9 +1,10 @@
 //! Interactive terminal interface to browse the findings of an analysis.
 
 mod app;
+mod overview;
 mod ui;
 
-pub use app::{App, Command, Counts};
+pub use app::{App, Command, Counts, Tab};
 
 use crate::analysis::analyze_directory;
 use crate::finding::Confidence;

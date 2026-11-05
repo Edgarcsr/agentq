@@ -1,6 +1,6 @@
 //! Renders the interface into an in-memory terminal and checks what is on screen.
 
-use super::app::App;
+use super::app::{App, Tab};
 use super::ui;
 use crate::analysis::Analysis;
 use crate::finding::{Confidence, QuantumRisk};
@@ -15,13 +15,15 @@ fn app_with(assessments: Vec<crate::assess::Assessment>) -> App {
         files: fixtures::files(),
         assessments,
     };
-    App::new(
+    let mut app = App::new(
         "project".into(),
         analysis,
         "2026-11".into(),
         false,
         Confidence::Low,
-    )
+    );
+    app.tab = Tab::Findings;
+    app
 }
 
 fn app() -> App {
@@ -209,5 +211,51 @@ fn help_overlay_explains_every_urgency_level() {
             screen.contains(expected),
             "missing `{expected}` in:\n{screen}"
         );
+    }
+}
+
+#[test]
+fn overview_shows_totals_and_rankings() {
+    let mut app = app();
+    app.handle_key(KeyCode::Char('1'));
+    let screen = draw(&mut app, 120, 34);
+    for expected in [
+        "1 Overview",
+        "2 Findings (3)",
+        "Quantum-vulnerable",
+        "Weakened",
+        "Already safe",
+        "By urgency",
+        "Top algorithms",
+        "ECDH (NIST curves)",
+        "Review first",
+        "src/b.ts",
+        "Languages",
+        "JS/TS",
+        "(50%)",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+    // The findings list belongs to the other tab.
+    assert!(!screen.contains("Why it matters"), "{screen}");
+}
+
+#[test]
+fn overview_has_a_message_when_there_is_nothing_to_show() {
+    let mut app = app_with(vec![]);
+    app.handle_key(KeyCode::Char('1'));
+    let screen = draw(&mut app, 110, 30);
+    assert!(screen.contains("No cryptographic use to show."), "{screen}");
+}
+
+#[test]
+fn overview_survives_small_terminals() {
+    for (width, height) in [(1, 1), (20, 6), (50, 14), (90, 40)] {
+        let mut app = app();
+        app.handle_key(KeyCode::Char('1'));
+        draw(&mut app, width, height);
     }
 }
