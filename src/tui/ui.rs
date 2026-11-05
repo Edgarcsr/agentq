@@ -1,6 +1,7 @@
 //! Drawing of the terminal interface.
 
-use super::app::App;
+use super::app::{App, Tab};
+use super::overview;
 use crate::assess::{Assessment, Urgency};
 use crate::finding::QuantumRisk;
 use crate::knowledge::Attack;
@@ -11,27 +12,28 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap};
 
 // The agentq palette.
-const ACCENT: Color = Color::Rgb(255, 138, 61);
-const ACCENT_LIGHT: Color = Color::Rgb(255, 210, 161);
-const FG: Color = Color::Rgb(245, 236, 228);
-const MUTED: Color = Color::Rgb(160, 143, 128);
-const BORDER: Color = Color::Rgb(51, 39, 29);
-const DANGER: Color = Color::Rgb(255, 107, 91);
-const ON_ACCENT: Color = Color::Rgb(26, 8, 0);
+pub(super) const ACCENT: Color = Color::Rgb(255, 138, 61);
+pub(super) const ACCENT_LIGHT: Color = Color::Rgb(255, 210, 161);
+pub(super) const FG: Color = Color::Rgb(245, 236, 228);
+pub(super) const MUTED: Color = Color::Rgb(160, 143, 128);
+pub(super) const BORDER: Color = Color::Rgb(51, 39, 29);
+pub(super) const DANGER: Color = Color::Rgb(255, 107, 91);
+pub(super) const SAFE: Color = Color::Rgb(142, 207, 160);
+pub(super) const ON_ACCENT: Color = Color::Rgb(26, 8, 0);
 
 /// Terminals narrower than this stack the list above the details.
 const WIDE: u16 = 100;
 
-fn urgency_color(urgency: Urgency) -> Color {
+pub(super) fn urgency_color(urgency: Urgency) -> Color {
     match urgency {
         Urgency::High => DANGER,
         Urgency::Medium => ACCENT,
         Urgency::Low => ACCENT_LIGHT,
-        Urgency::None => MUTED,
+        Urgency::None => SAFE,
     }
 }
 
-fn urgency_label(urgency: Urgency) -> &'static str {
+pub(super) fn urgency_label(urgency: Urgency) -> &'static str {
     match urgency {
         Urgency::High => " HIGH ",
         Urgency::Medium => " MED  ",
@@ -40,7 +42,7 @@ fn urgency_label(urgency: Urgency) -> &'static str {
     }
 }
 
-fn badge(urgency: Urgency) -> Span<'static> {
+pub(super) fn badge(urgency: Urgency) -> Span<'static> {
     Span::styled(
         urgency_label(urgency),
         Style::new()
@@ -50,7 +52,7 @@ fn badge(urgency: Urgency) -> Span<'static> {
     )
 }
 
-fn panel(title: &str) -> Block<'static> {
+pub(super) fn panel(title: &str) -> Block<'static> {
     Block::bordered()
         .padding(Padding::horizontal(1))
         .border_style(Style::new().fg(BORDER))
@@ -63,7 +65,7 @@ fn panel(title: &str) -> Block<'static> {
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     let [header, body, footer] = Layout::vertical([
-        Constraint::Length(2),
+        Constraint::Length(3),
         Constraint::Min(6),
         Constraint::Length(2),
     ])
@@ -71,13 +73,20 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     render_header(frame, header, app);
 
-    let [list_area, detail_area] = if area.width >= WIDE {
-        Layout::horizontal([Constraint::Percentage(42), Constraint::Percentage(58)]).areas(body)
-    } else {
-        Layout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(body)
-    };
-    render_list(frame, list_area, app);
-    render_details(frame, detail_area, app);
+    match app.tab {
+        Tab::Overview => overview::render(frame, body, app),
+        Tab::Findings => {
+            let [list_area, detail_area] = if area.width >= WIDE {
+                Layout::horizontal([Constraint::Percentage(42), Constraint::Percentage(58)])
+                    .areas(body)
+            } else {
+                Layout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)])
+                    .areas(body)
+            };
+            render_list(frame, list_area, app);
+            render_details(frame, detail_area, app);
+        }
+    }
     render_footer(frame, footer, app);
 
     if app.show_help {
@@ -103,10 +112,32 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             Style::new().fg(MUTED),
         ),
     ]);
+
+    let tab = |label: String, active: bool| {
+        let style = if active {
+            Style::new()
+                .fg(ON_ACCENT)
+                .bg(ACCENT_LIGHT)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(MUTED)
+        };
+        Span::styled(format!(" {label} "), style)
+    };
+    let tabs = Line::from(vec![
+        Span::raw(" "),
+        tab("1 Overview".to_string(), app.tab == Tab::Overview),
+        Span::raw(" "),
+        tab(
+            format!("2 Findings ({})", app.visible().len()),
+            app.tab == Tab::Findings,
+        ),
+    ]);
+
     let block = Block::new()
         .borders(Borders::BOTTOM)
         .border_style(Style::new().fg(BORDER));
-    frame.render_widget(Paragraph::new(title).block(block), area);
+    frame.render_widget(Paragraph::new(vec![title, tabs]).block(block), area);
 }
 
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -360,6 +391,8 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         text(" "),
         key("↑↓"),
         text(" select  "),
+        key("1 2"),
+        text(" tabs  "),
         key("PgUp/PgDn"),
         text(" scroll  "),
         key("s"),
