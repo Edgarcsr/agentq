@@ -97,6 +97,7 @@ cargo run -- <directory> --format markdown    # text (default), json, or markdow
 cargo run -- <directory> -o report.json -f json
 cargo run -- <directory> --hide-safe --min-confidence medium
 cargo run -- <directory> --tui                # browse the findings interactively
+cargo run -- samples/node-shop --tui          # try it on the bundled sample shop
 ```
 
 The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) lists the findings most urgent first on the left and shows the selected one on the right: what the code does, why it is a risk, and what to replace it with. Keys: `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `?` help, `q` quit.
