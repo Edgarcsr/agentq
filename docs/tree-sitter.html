@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Por que o agentq usa tree-sitter</title>
+<style>
+  :root {
+    --bg: #0b0705;
+    --app-bg: #100b08;
+    --panel: #17110c;
+    --border: #33271d;
+    --fg: #f5ece4;
+    --muted: #a08f80;
+    --accent: #ff8a3d;
+    --accent-2: #ffd2a1;
+    --accent-deep: #ff7a1a;
+    --bad: #ff6b5b;
+    --font: -apple-system, "SF Pro Display", "Helvetica Neue", Inter, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background:
+      radial-gradient(900px 480px at 50% -80px, rgb(255 138 61 / 0.14), transparent 70%),
+      radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px) 0 0 / 22px 22px,
+      var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 0 24px 96px; }
+  section { padding: 72px 0 0; }
+  h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.08; letter-spacing: -0.03em; }
+  h2 { font-size: clamp(24px, 3.4vw, 32px); letter-spacing: -0.02em; line-height: 1.2; }
+  h3 { font-size: 16px; font-weight: 600; }
+  p.lead { color: var(--muted); font-size: 18px; max-width: 62ch; margin-top: 14px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px; display: block;
+  }
+  .brand { color: var(--accent); font-weight: 700; }
+  code, .mono { font-family: var(--mono); }
+  em { font-style: normal; color: var(--accent-2); }
+
+  /* hero */
+  header { padding: 88px 0 8px; }
+  header h1 span { color: var(--accent); }
+  .answer {
+    margin-top: 28px; padding: 18px 22px; border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 12px; max-width: 70ch; font-size: 17px;
+  }
+
+  /* reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* code blocks */
+  .code { font-family: var(--mono); font-size: 13.5px; background: var(--app-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .line { display: flex; gap: 12px; padding: 9px 14px; align-items: baseline; position: relative;
+    transition: background .3s, opacity .4s; border-bottom: 1px solid rgb(255 255 255 / 0.04); }
+  .line:last-child { border-bottom: 0; }
+  .ln { color: #5d4d3f; width: 14px; text-align: right; flex: none; }
+  .src { white-space: pre-wrap; word-break: break-word; flex: 1; }
+  .cm { color: var(--muted); }
+  .st { color: var(--accent-2); }
+  mark { background: transparent; color: inherit; border-radius: 4px; padding: 1px 3px; transition: background .3s, box-shadow .3s; }
+  .tag {
+    font-family: var(--font); font-size: 11.5px; padding: 2px 9px; border-radius: 99px; flex: none;
+    border: 1px solid var(--border); color: var(--muted); opacity: 0; transform: translateX(-6px); transition: all .35s;
+  }
+
+  /* duel */
+  .duel { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 34px; }
+  @media (max-width: 800px) { .duel { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+  .panel header { padding: 0 0 14px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .panel header small { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .score { margin-top: 14px; display: flex; align-items: baseline; gap: 10px; }
+  .score b { font-size: 40px; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .score span { color: var(--muted); font-size: 14px; }
+  .grep .score b { color: var(--bad); }
+  .tree .score b { color: var(--accent); }
+  .line.scanning { background: rgb(255 138 61 / 0.12); }
+  .grep .line.hit mark { background: rgb(255 107 91 / 0.28); box-shadow: 0 0 0 1px rgb(255 107 91 / 0.6); }
+  .tree .line.ignored { opacity: 0.38; }
+  .tree .line.ignored .tag, .tree .line.real .tag { opacity: 1; transform: none; }
+  .tree .line.real mark { background: rgb(255 138 61 / 0.28); box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgb(255 138 61 / 0.45); }
+  .tree .line.real .tag { color: var(--accent); border-color: var(--accent); }
+  .grep .line.hit .tag { opacity: 1; transform: none; color: var(--bad); border-color: rgb(255 107 91 / 0.5); }
+  .replay {
+    margin-top: 22px; font: inherit; font-size: 14px; color: var(--fg); background: transparent; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 99px; padding: 8px 18px; transition: border-color .2s, color .2s;
+  }
+  .replay:hover { border-color: var(--accent); color: var(--accent); }
+  .replay:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .verdict { margin-top: 20px; color: var(--muted); max-width: 70ch; }
+  .verdict b { color: var(--fg); }
+
+  /* tree diagram */
+  .treebox { margin-top: 34px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+  .treebox .code { margin-bottom: 18px; }
+  .tok { border-radius: 4px; padding: 1px 2px; transition: background .4s, box-shadow .4s; }
+  .tok.on { background: rgb(255 138 61 / 0.22); box-shadow: 0 0 0 1px rgb(255 138 61 / 0.6); }
+  svg.tree { width: 100%; height: auto; display: block; }
+  .edge { fill: none; stroke: var(--border); stroke-width: 2; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .6s ease, stroke .4s; }
+  .edge.on { stroke-dashoffset: 0; stroke: var(--accent); }
+  .node { opacity: 0; transform: scale(.85); transform-box: fill-box; transform-origin: center; transition: opacity .45s, transform .45s; }
+  .node.on { opacity: 1; transform: none; }
+  .node rect { fill: var(--app-bg); stroke: var(--border); stroke-width: 1.5; }
+  .node.on rect { stroke: var(--accent); }
+  .node.leaf.on rect { fill: rgb(255 138 61 / 0.12); }
+  .node .k { font-family: var(--mono); font-size: 13px; fill: var(--accent-2); text-anchor: middle; }
+  .node .d { font-family: var(--font); font-size: 12px; fill: var(--muted); text-anchor: middle; }
+  .caption { color: var(--muted); font-size: 15px; margin-top: 8px; min-height: 26px; transition: opacity .3s; }
+  .caption b { color: var(--fg); }
+
+  /* cards */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
+  @media (max-width: 860px) { .cards { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .card h3 { color: var(--fg); }
+  .card p { color: var(--muted); font-size: 14.5px; }
+  .card .code { font-size: 12.5px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; min-height: 30px; }
+  .chip {
+    font-family: var(--mono); font-size: 12px; padding: 4px 11px; border-radius: 99px;
+    background: rgb(255 138 61 / 0.14); color: var(--accent); border: 1px solid rgb(255 138 61 / 0.45);
+    opacity: 0; transform: translateY(6px) scale(.9); transition: all .45s cubic-bezier(.2,.9,.3,1.3);
+  }
+  .in .chip { opacity: 1; transform: none; }
+  .in .chip:nth-child(1) { transition-delay: .5s; }
+  .in .chip:nth-child(2) { transition-delay: .9s; }
+  .in .chip:nth-child(3) { transition-delay: 1.3s; }
+  .caret::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* bars */
+  .metrics { margin-top: 34px; display: grid; gap: 26px; }
+  .metric h3 { margin-bottom: 10px; }
+  .barrow { display: grid; grid-template-columns: 150px 1fr 64px; gap: 12px; align-items: center; margin: 7px 0; font-size: 14px; }
+  @media (max-width: 560px) { .barrow { grid-template-columns: 110px 1fr 54px; } }
+  .barrow .name { color: var(--muted); }
+  .barrow .val { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { height: 14px; border-radius: 99px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width 1.3s cubic-bezier(.2,.8,.2,1); }
+  .in .bar i { width: var(--w); }
+  .bar.grep i { background: linear-gradient(90deg, #8a3a32, var(--bad)); }
+  .bar.agent i { background: linear-gradient(90deg, var(--accent-deep), var(--accent-2)); }
+  .barrow.agent .val { color: var(--accent); }
+  .fine { margin-top: 20px; color: var(--muted); font-size: 14px; max-width: 70ch; border-left: 2px solid var(--border); padding-left: 14px; }
+
+  /* comparison */
+  .tablewrap { overflow-x: auto; margin-top: 34px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14.5px; }
+  th, td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: 0; }
+  th { font-weight: 600; color: var(--fg); background: rgb(255 255 255 / 0.02); }
+  td:first-child { color: var(--muted); width: 22%; }
+  .pick { background: rgb(255 138 61 / 0.08); box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent); }
+  th.pick { color: var(--accent); }
+  .yes { color: var(--accent); }
+  .no { color: var(--bad); }
+  .mid { color: var(--accent-2); }
+
+  .limits { margin-top: 34px; display: grid; gap: 12px; }
+  .limits li { list-style: none; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--muted); }
+  .limits li b { color: var(--fg); }
+  .limits code { color: var(--accent-2); }
+
+  footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  footer a { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <span class="eyebrow">decisão de projeto</span>
+  <h1>Por que o <span>agentq</span> lê o código como uma árvore</h1>
+  <p class="lead">O agentq precisa achar criptografia que computadores quânticos conseguem quebrar. Para isso ele não procura palavras: ele entende a estrutura do código, usando uma biblioteca chamada <em>tree-sitter</em>.</p>
+  <div class="answer"><b>Em uma frase:</b> o tree-sitter transforma o código em uma árvore, e a árvore permite separar o que é <em>uso real</em> de criptografia do que é só uma <em>menção</em> (comentário ou texto).</div>
+</header>
+
+<!-- 1. O problema -->
+<section class="reveal">
+  <span class="eyebrow">1 · o problema</span>
+  <h2>Uma busca por texto se confunde fácil</h2>
+  <p class="lead">Veja um arquivo com três linhas que falam de <code>md5</code>, um algoritmo fraco. Só a última linha realmente usa. Aperte repetir se perder a animação.</p>
+
+  <div class="duel" id="duel">
+    <div class="panel grep">
+      <header><h3>Busca por texto</h3><small>grep md5</small></header>
+      <div class="code">
+        <div class="line"><span class="ln">1</span><span class="src cm">// crypto.createHash('<mark>md5</mark>') é inseguro</span><span class="tag">achou</span></div>
+        <div class="line"><span class="ln">2</span><span class="src">const aviso = <span class="st">"use createHash('<mark>md5</mark>')"</span>;</span><span class="tag">achou</span></div>
+        <div class="line"><span class="ln">3</span><span class="src">crypto.createHash(<span class="st">'<mark>md5</mark>'</span>);</span><span class="tag">achou</span></div>
+      </div>
+      <div class="score"><b id="gcount">0</b><span>achados, mas só 1 é real</span></div>
+    </div>
+
+    <div class="panel tree">
+      <header><h3>agentq com tree-sitter</h3><small>olha a estrutura</small></header>
+      <div class="code">
+        <div class="line"><span class="ln">1</span><span class="src cm">// crypto.createHash('<mark>md5</mark>') é inseguro</span><span class="tag">comentário</span></div>
+        <div class="line"><span class="ln">2</span><span class="src">const aviso = <span class="st">"use createHash('<mark>md5</mark>')"</span>;</span><span class="tag">só um texto</span></div>
+        <div class="line"><span class="ln">3</span><span class="src">crypto.createHash(<span class="st">'<mark>md5</mark>'</span>);</span><span class="tag">chamada real</span></div>
+      </div>
+      <div class="score"><b id="tcount">0</b><span>achado, e é o certo</span></div>
+    </div>
+  </div>
+  <button class="replay" data-target="duel">↻ Repetir</button>
+  <p class="verdict">Na busca por texto, comentários e frases entram na conta e geram <b>falsos alarmes</b>. Quem lê o relatório perde tempo, e perde a confiança na ferramenta.</p>
+</section>
+
+<!-- 2. A árvore -->
+<section class="reveal">
+  <span class="eyebrow">2 · como funciona</span>
+  <h2>O código vira uma árvore de peças</h2>
+  <p class="lead">O tree-sitter lê a linha e a divide em partes com nome, ligadas entre si, como uma árvore genealógica. Cada peça sabe o que é: uma chamada, um módulo, um texto.</p>
+
+  <div class="treebox" id="treebox">
+    <div class="code"><div class="line"><span class="ln">3</span><span class="src"><span class="tok" data-s="1"><span class="tok" data-s="2"><span class="tok" data-s="4">crypto</span>.<span class="tok" data-s="5">createHash</span></span>(<span class="tok" data-s="3"><span class="st tok" data-s="6">'md5'</span></span>)</span>;</span></div></div>
+
+    <svg class="tree" viewBox="0 0 760 330" role="img" aria-label="Árvore sintática da chamada crypto.createHash('md5')">
+      <path class="edge" data-s="2" pathLength="1" d="M380 70 C380 105 190 100 190 140"/>
+      <path class="edge" data-s="3" pathLength="1" d="M380 70 C380 105 570 100 570 140"/>
+      <path class="edge" data-s="4" pathLength="1" d="M190 194 C190 225 95 220 95 252"/>
+      <path class="edge" data-s="5" pathLength="1" d="M190 194 C190 225 290 220 290 252"/>
+      <path class="edge" data-s="6" pathLength="1" d="M570 194 C570 225 570 225 570 252"/>
+
+      <g class="node" data-s="1"><rect x="285" y="16" width="190" height="54" rx="10"/><text class="k" x="380" y="40">call_expression</text><text class="d" x="380" y="58">a chamada inteira</text></g>
+      <g class="node" data-s="2"><rect x="95" y="140" width="190" height="54" rx="10"/><text class="k" x="190" y="164">member_expression</text><text class="d" x="190" y="182">quem está sendo chamado</text></g>
+      <g class="node" data-s="3"><rect x="475" y="140" width="190" height="54" rx="10"/><text class="k" x="570" y="164">arguments</text><text class="d" x="570" y="182">o que foi passado</text></g>
+      <g class="node leaf" data-s="4"><rect x="10" y="252" width="170" height="54" rx="10"/><text class="k" x="95" y="276">crypto</text><text class="d" x="95" y="294">o módulo</text></g>
+      <g class="node leaf" data-s="5"><rect x="205" y="252" width="170" height="54" rx="10"/><text class="k" x="290" y="276">createHash</text><text class="d" x="290" y="294">a função</text></g>
+      <g class="node leaf" data-s="6"><rect x="485" y="252" width="170" height="54" rx="10"/><text class="k" x="570" y="276">'md5'</text><text class="d" x="570" y="294">o algoritmo (um texto)</text></g>
+    </svg>
+    <p class="caption" id="treecap" aria-live="polite"></p>
+  </div>
+  <button class="replay" data-target="treebox">↻ Repetir</button>
+  <p class="verdict">Um comentário ou um texto solto nem aparece como <b>chamada</b> nessa árvore. Por isso o agentq só olha as peças que são chamadas de verdade.</p>
+</section>
+
+<!-- 3. O que a árvore permite -->
+<section class="reveal">
+  <span class="eyebrow">3 · o que isso permite</span>
+  <h2>Três coisas que o texto puro não faz</h2>
+
+  <div class="cards">
+    <article class="card">
+      <h3>Segue apelidos</h3>
+      <div class="code">
+        <div class="line"><span class="ln">1</span><span class="src">const { createHash: h } = require('crypto');</span></div>
+        <div class="line"><span class="ln">2</span><span class="src">h(<span class="st">'md5'</span>);</span></div>
+      </div>
+      <div class="chips"><span class="chip">h = createHash</span><span class="chip">md5 encontrado</span></div>
+      <p>A árvore mostra que <code>h</code> é só outro nome de <code>createHash</code>. Uma busca por <code>createHash</code> perderia a linha 2.</p>
+    </article>
+
+    <article class="card">
+      <h3>Lê os argumentos</h3>
+      <div class="code">
+        <div class="line"><span class="ln">1</span><span class="src">generateKeyPairSync(<span class="st">'rsa'</span>, {<br>  modulusLength: 2048 });</span></div>
+      </div>
+      <div class="chips"><span class="chip">RSA</span><span class="chip">2048 bits</span><span class="chip">alto risco</span></div>
+      <p>Cada argumento é uma peça separada, então dá para ler o algoritmo e o tamanho da chave.</p>
+    </article>
+
+    <article class="card">
+      <h3>Sabe onde está</h3>
+      <div class="code">
+        <div class="line"><span class="ln">›</span><span class="src"><span id="loc" class="caret"></span></span></div>
+      </div>
+      <div class="chips"><span class="chip">arquivo</span><span class="chip">linha</span><span class="chip">coluna</span></div>
+      <p>Cada peça carrega a posição exata no arquivo, e o relatório leva quem lê direto ao ponto.</p>
+    </article>
+  </div>
+</section>
+
+<!-- 4. Números -->
+<section class="reveal">
+  <span class="eyebrow">4 · o resultado medido</span>
+  <h2>Menos falsos alarmes, e menos coisas perdidas</h2>
+  <p class="lead">Medimos o agentq e uma busca por palavras-chave no mesmo conjunto de 48 usos anotados à mão.</p>
+
+  <div class="metrics" id="metrics">
+    <div class="metric">
+      <h3>Precisão <span style="color:var(--muted);font-weight:400">· dos achados, quantos são reais</span></h3>
+      <div class="barrow"><span class="name">Busca por texto</span><div class="bar grep"><i style="--w:65.2%"></i></div><span class="val">65,2%</span></div>
+      <div class="barrow agent"><span class="name">agentq</span><div class="bar agent"><i style="--w:100%"></i></div><span class="val">100%</span></div>
+    </div>
+    <div class="metric">
+      <h3>Recall <span style="color:var(--muted);font-weight:400">· dos usos reais, quantos foram achados</span></h3>
+      <div class="barrow"><span class="name">Busca por texto</span><div class="bar grep"><i style="--w:62.5%"></i></div><span class="val">62,5%</span></div>
+      <div class="barrow agent"><span class="name">agentq</span><div class="bar agent"><i style="--w:95.8%"></i></div><span class="val">95,8%</span></div>
+    </div>
+  </div>
+  <p class="fine"><b>Atenção:</b> o conjunto de teste foi escrito por nós, depois da ferramenta. Esses números mostram a diferença para uma busca simples e protegem contra regressões, mas ainda não provam o desempenho em código de terceiros. Essa validação, em repositórios reais, é um próximo passo.</p>
+</section>
+
+<!-- 5. Alternativas -->
+<section class="reveal">
+  <span class="eyebrow">5 · a decisão</span>
+  <h2>Por que não as outras opções</h2>
+  <p class="lead">Consideramos três caminhos. Escolhemos o terceiro.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th></th><th>Busca por texto ou regex</th><th>Semgrep (ferramenta externa)</th><th class="pick">tree-sitter + regras nossas</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Entende a estrutura do código</td><td class="no">Não</td><td class="yes">Sim</td><td class="pick yes">Sim</td></tr>
+        <tr><td>Ignora comentários e textos</td><td class="no">Não</td><td class="yes">Sim</td><td class="pick yes">Sim</td></tr>
+        <tr><td>Segue apelidos e constantes</td><td class="no">Não</td><td class="mid">Em parte</td><td class="pick yes">Sim, no nosso código</td></tr>
+        <tr><td>Integração com o agentq</td><td>Simples</td><td class="mid">Programa separado para instalar e chamar</td><td class="pick yes">Embutido no binário Rust</td></tr>
+        <tr><td>Esforço para cobrir uma biblioteca nova</td><td class="yes">Baixo</td><td>Escrever uma regra em YAML</td><td class="pick">Escrever uma regra em Rust</td></tr>
+        <tr><td>Controle sobre a lógica</td><td class="no">Pouco</td><td class="mid">Limitado às regras</td><td class="pick yes">Total</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="verdict"><b>Decisão:</b> tree-sitter, porque o projeto precisa distinguir uso real de menção e inferir o propósito de cada chave. A mesma biblioteca já tem gramáticas de JavaScript, TypeScript, Python, Java e Go, então a ideia serve para as próximas linguagens.</p>
+
+  <ul class="limits">
+    <li><b>O que o tree-sitter não resolve:</b> ele vê a <i>forma</i> do código, não o seu <i>significado</i> em execução.</li>
+    <li>Se o algoritmo vem de um parâmetro de função, como <code>digest(algoritmo)</code>, ou de uma configuração externa, a árvore não sabe o valor, e o agentq <b>não reporta</b> esse caso. Está registrado como limitação conhecida no README.</li>
+  </ul>
+</section>
+
+<footer>
+  Veja também o <a href="../README.md">README</a> e o <a href="devlog-2026-11-02.md">devlog</a>. Biblioteca: <a href="https://tree-sitter.github.io">tree-sitter.github.io</a>.
+</footer>
+
+</main>
+
+<script>
+(function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var runs = {};
+  function token(id) { runs[id] = (runs[id] || 0) + 1; return runs[id]; }
+  function live(id, t) { return runs[id] === t; }
+
+  /* --- demo 1: busca por texto x árvore --- */
+  var duel = document.getElementById('duel');
+  var gcount = document.getElementById('gcount');
+  var tcount = document.getElementById('tcount');
+  async function playDuel() {
+    var t = token('duel');
+    var gl = duel.querySelectorAll('.grep .line');
+    var tl = duel.querySelectorAll('.tree .line');
+    [].forEach.call(duel.querySelectorAll('.line'), function (l) { l.className = 'line'; });
+    gcount.textContent = '0'; tcount.textContent = '0';
+    if (reduce) {
+      [].forEach.call(gl, function (l) { l.classList.add('hit'); });
+      tl[0].classList.add('ignored'); tl[1].classList.add('ignored'); tl[2].classList.add('real');
+      gcount.textContent = '3'; tcount.textContent = '1';
+      return;
+    }
+    for (var i = 0; i < 3; i++) {
+      if (!live('duel', t)) return;
+      gl[i].classList.add('scanning'); tl[i].classList.add('scanning');
+      await wait(650);
+      if (!live('duel', t)) return;
+      gl[i].classList.remove('scanning'); tl[i].classList.remove('scanning');
+      gl[i].classList.add('hit'); gcount.textContent = String(i + 1);
+      if (i < 2) { tl[i].classList.add('ignored'); }
+      else { tl[i].classList.add('real'); tcount.textContent = '1'; }
+      await wait(450);
+    }
+  }
+
+  /* --- demo 2: a árvore --- */
+  var treebox = document.getElementById('treebox');
+  var cap = document.getElementById('treecap');
+  var captions = {
+    1: '<b>1.</b> A linha inteira é uma <b>chamada de função</b>.',
+    2: '<b>2.</b> Ela tem uma parte que diz <b>quem está sendo chamado</b>: <code>crypto.createHash</code>.',
+    3: '<b>3.</b> E outra com <b>o que foi passado</b> para a função.',
+    4: '<b>4.</b> Quem é chamado se divide: o <b>módulo</b> <code>crypto</code>...',
+    5: '<b>5.</b> ...e a <b>função</b> <code>createHash</code>.',
+    6: '<b>6.</b> O argumento é um texto: <code>\'md5\'</code>, o algoritmo. É isso que o agentq lê.'
+  };
+  function setStep(n) {
+    [].forEach.call(treebox.querySelectorAll('[data-s]'), function (el) {
+      var s = Number(el.getAttribute('data-s'));
+      var on = s <= n;
+      if (el.classList.contains('tok')) { el.classList.toggle('on', s === n); }
+      else { el.classList.toggle('on', on); }
+    });
+    cap.innerHTML = captions[n] || '';
+  }
+  async function playTree() {
+    var t = token('treebox');
+    if (reduce) { setStep(6); return; }
+    cap.innerHTML = '';
+    [].forEach.call(treebox.querySelectorAll('[data-s]'), function (el) { el.classList.remove('on'); });
+    for (var n = 1; n <= 6; n++) {
+      if (!live('treebox', t)) return;
+      setStep(n);
+      await wait(1500);
+    }
+  }
+
+  /* --- digitação da posição --- */
+  var loc = document.getElementById('loc');
+  async function typeLoc() {
+    var t = token('loc');
+    var text = 'src/server.js:3:35';
+    if (reduce) { loc.textContent = text; return; }
+    loc.textContent = '';
+    for (var i = 1; i <= text.length; i++) {
+      if (!live('loc', t)) return;
+      loc.textContent = text.slice(0, i);
+      await wait(95);
+    }
+  }
+
+  var starters = { duel: playDuel, treebox: playTree };
+  [].forEach.call(document.querySelectorAll('.replay'), function (b) {
+    b.addEventListener('click', function () { starters[b.getAttribute('data-target')](); });
+  });
+
+  /* --- aparecer ao rolar, e disparar as animações da seção --- */
+  var started = {};
+  function onVisible(section) {
+    section.classList.add('in');
+    if (section.querySelector('#duel') && !started.duel) { started.duel = 1; playDuel(); }
+    if (section.querySelector('#treebox') && !started.treebox) { started.treebox = 1; playTree(); }
+    if (section.querySelector('#loc') && !started.loc) { started.loc = 1; typeLoc(); }
+  }
+  var sections = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { onVisible(e.target); io.unobserve(e.target); } });
+    }, { threshold: 0.25 });
+    [].forEach.call(sections, function (s) { io.observe(s); });
+  } else {
+    [].forEach.call(sections, onVisible);
+  }
+})();
+</script>
+</body>
+</html>
