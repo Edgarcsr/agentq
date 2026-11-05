@@ -185,3 +185,25 @@ fn sample_shop_covers_every_urgency_level() {
     assert_eq!(urgency["low"], 6);
     assert_eq!(urgency["none"], 6);
 }
+
+#[test]
+fn tui_without_a_path_also_needs_a_terminal() {
+    let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .arg("--tui")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs a terminal"));
+}
+
+#[test]
+fn without_a_path_a_report_analyzes_the_current_folder() {
+    let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .current_dir(fixture("node_crypto"))
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["summary"]["findings"], 5);
+}

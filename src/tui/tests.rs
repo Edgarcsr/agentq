@@ -1,7 +1,9 @@
 //! Renders the interface into an in-memory terminal and checks what is on screen.
 
 use super::app::{App, Tab};
+use super::browser::{Browser, fixture::TempTree};
 use super::ui;
+use super::{Screen, Tui};
 use crate::analysis::Analysis;
 use crate::assess::Urgency;
 use crate::finding::{Confidence, QuantumRisk};
@@ -391,4 +393,139 @@ fn mouse_events_on_a_tiny_terminal_do_not_panic() {
         click(&mut app, column, row);
         app.handle_mouse(MouseEventKind::ScrollDown, column, row);
     }
+}
+
+fn draw_tui(tui: &mut Tui, width: u16, height: u16) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| tui.render(frame)).unwrap();
+    screen(terminal.backend().buffer())
+}
+
+fn sample() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("samples/node-shop")
+}
+
+#[test]
+fn the_browser_shows_folders_hints_and_the_way_to_analyze() {
+    let tree = TempTree::new();
+    let mut tui = Tui::start(None, false, Confidence::Low);
+    tui.screen = Screen::Browse(Browser::new(tree.0.clone()));
+    let screen = draw_tui(&mut tui, 110, 22);
+    for expected in [
+        "Choose a project to analyze",
+        "Analyze this folder",
+        "parent folder",
+        "alpha/",
+        "Node project",
+        "Beta/",
+        "git repository",
+        "gamma/",
+        "analyze here",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+    assert!(!screen.contains(".hidden"), "{screen}");
+}
+
+#[test]
+fn the_browser_explains_when_a_folder_cannot_be_opened() {
+    let tree = TempTree::new();
+    let mut browser = Browser::new(tree.0.clone());
+    browser.open(tree.0.join("missing"));
+    let mut tui = Tui::start(None, false, Confidence::Low);
+    tui.screen = Screen::Browse(browser);
+    assert!(draw_tui(&mut tui, 110, 22).contains("Cannot open"));
+}
+
+#[test]
+fn a_path_skips_the_browser() {
+    let tui = Tui::start(Some(&sample()), false, Confidence::Low);
+    match &tui.screen {
+        Screen::Results(app) => assert_eq!(app.visible().len(), 22),
+        Screen::Browse(_) => panic!("expected the results"),
+    }
+}
+
+#[test]
+fn without_a_path_it_starts_on_the_browser() {
+    let tui = Tui::start(None, false, Confidence::Low);
+    assert!(matches!(tui.screen, Screen::Browse(_)));
+}
+
+#[test]
+fn choosing_a_folder_shows_its_results_and_b_goes_back() {
+    let samples = sample().parent().unwrap().to_path_buf();
+    let mut tui = Tui::start(None, true, Confidence::Medium);
+    tui.screen = Screen::Browse(Browser::new(samples.clone()));
+
+    // Go into node-shop and analyze it.
+    let Screen::Browse(browser) = &mut tui.screen else {
+        unreachable!()
+    };
+    browser.select_path(&std::fs::canonicalize(sample()).unwrap());
+    tui.handle_key(KeyCode::Enter);
+    tui.handle_key(KeyCode::Char('a'));
+
+    let Screen::Results(app) = &tui.screen else {
+        panic!("expected the results")
+    };
+    assert!(app.root.ends_with("node-shop"));
+    // The settings given on the command line carry over.
+    assert!(app.hide_safe);
+    assert_eq!(app.min_confidence, Confidence::Medium);
+    assert!(draw_tui(&mut tui, 120, 34).contains("Overview"));
+
+    // "b" returns to the folder that holds the project, with it selected.
+    tui.handle_key(KeyCode::Char('b'));
+    let Screen::Browse(browser) = &tui.screen else {
+        panic!("expected the browser")
+    };
+    assert_eq!(browser.dir, std::fs::canonicalize(&samples).unwrap());
+    assert_eq!(browser.entries[browser.selected].name, "node-shop");
+}
+
+#[test]
+fn quitting_works_from_both_screens() {
+    let mut tui = Tui::start(None, false, Confidence::Low);
+    tui.handle_key(KeyCode::Char('q'));
+    assert!(tui.should_quit());
+
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low);
+    tui.handle_key(KeyCode::Char('q'));
+    assert!(tui.should_quit());
+}
+
+#[test]
+fn rescan_keeps_the_results_screen() {
+    let mut tui = Tui::start(Some(&sample()), false, Confidence::Low);
+    tui.handle_key(KeyCode::Char('r'));
+    let Screen::Results(app) = &tui.screen else {
+        panic!("expected the results")
+    };
+    assert_eq!(app.visible().len(), 22);
+    assert!(app.status.as_deref().unwrap().contains("22 use(s)"));
+}
+
+#[test]
+fn mouse_events_reach_the_active_screen() {
+    let tree = TempTree::new();
+    let mut tui = Tui::start(None, false, Confidence::Low);
+    tui.screen = Screen::Browse(Browser::new(tree.0.clone()));
+    draw_tui(&mut tui, 110, 22);
+    let Screen::Browse(browser) = &tui.screen else {
+        unreachable!()
+    };
+    let list = browser.list_area;
+    tui.handle_mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        list.x + 3,
+        list.y + 2,
+    );
+    let Screen::Browse(browser) = &tui.screen else {
+        unreachable!()
+    };
+    assert_eq!(browser.selected, 2);
 }

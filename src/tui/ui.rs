@@ -416,6 +416,8 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         text(" confidence  "),
         key("r"),
         text(" rescan  "),
+        key("b"),
+        text(" browse  "),
         key("?"),
         text(" help  "),
         key("q"),
@@ -432,6 +434,9 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ("s", "hide or show safe uses"),
         ("c", "cycle the minimum confidence"),
         ("r", "scan the directory again"),
+        ("b", "choose another project"),
+        ("1  2  Tab", "switch between overview and findings"),
+        ("mouse", "click tabs and findings, wheel to scroll"),
         ("?", "close this help"),
         ("q  Esc", "quit"),
     ];

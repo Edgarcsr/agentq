@@ -12,9 +12,8 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    /// Directory to analyze.
-    #[arg(default_value = ".")]
-    path: PathBuf,
+    /// Directory to analyze (the current one, or with --tui a folder to pick).
+    path: Option<PathBuf>,
 
     /// Report format.
     #[arg(short, long, value_enum, default_value_t = FormatArg::Text)]
@@ -74,13 +73,19 @@ impl From<ConfidenceArg> for Confidence {
 
 fn main() -> ExitCode {
     let args = Args::parse();
-    if !args.path.is_dir() {
-        eprintln!("error: `{}` is not a directory", args.path.display());
+    if let Some(path) = &args.path
+        && !path.is_dir()
+    {
+        eprintln!("error: `{}` is not a directory", path.display());
         return ExitCode::from(2);
     }
 
     if args.tui {
-        return match agentq::tui::run(&args.path, args.hide_safe, args.min_confidence.into()) {
+        return match agentq::tui::run(
+            args.path.as_deref(),
+            args.hide_safe,
+            args.min_confidence.into(),
+        ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("error: {error}");
@@ -89,7 +94,8 @@ fn main() -> ExitCode {
         };
     }
 
-    let analysis = analyze_directory(&args.path);
+    let path = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let analysis = analyze_directory(&path);
 
     let min_confidence = Confidence::from(args.min_confidence);
     let mut assessments = analysis.assessments;
@@ -100,7 +106,7 @@ fn main() -> ExitCode {
 
     let knowledge = KnowledgeBase::embedded();
     let report = Report {
-        root: args.path.display().to_string(),
+        root: path.display().to_string(),
         files: &analysis.files,
         assessments,
         knowledge_version: knowledge.version.clone(),
