@@ -148,3 +148,20 @@ fn missing_directory_is_an_error() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("not a directory"));
 }
+
+#[test]
+fn tui_without_a_terminal_explains_what_to_do() {
+    // Tests capture stdout, so the interface cannot start.
+    let output = run(&["--tui"], "node_crypto");
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("needs a terminal"), "{stderr}");
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn tui_cannot_be_combined_with_a_report_format() {
+    let output = run(&["--tui", "--format", "json"], "node_crypto");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
+}
