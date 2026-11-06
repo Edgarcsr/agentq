@@ -1,7 +1,7 @@
 //! The folder browser shown when no path is given: pick the project to analyze.
 
 use super::ui::{
-    ACCENT, ACCENT_LIGHT, BORDER, DANGER, FG, MUTED, ON_ACCENT, SAFE, key_hints, panel,
+    ACCENT, BORDER, FG, MUTED, ON_ACCENT, focused_panel, key_hints, row_bar, selected_symbol,
 };
 use crate::i18n::{Lang, fill};
 use ratatui::Frame;
@@ -41,7 +41,8 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Analyze(PathBuf),
-    Quit,
+    /// Back to the main menu.
+    Back,
 }
 
 pub struct Browser {
@@ -180,7 +181,7 @@ impl Browser {
     pub fn handle_key(&mut self, key: KeyCode) -> Option<Action> {
         self.error = None;
         match key {
-            KeyCode::Char('q') | KeyCode::Esc => return Some(Action::Quit),
+            KeyCode::Char('q') | KeyCode::Esc => return Some(Action::Back),
             KeyCode::Down | KeyCode::Char('j') => self.select(self.selected.saturating_add(1)),
             KeyCode::Up | KeyCode::Char('k') => self.select(self.selected.saturating_sub(1)),
             KeyCode::Home | KeyCode::Char('g') => self.select(0),
@@ -259,7 +260,7 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
     ]);
     let location = Line::from(Span::styled(
         format!(" {}", browser.dir.display()),
-        Style::new().fg(ACCENT_LIGHT),
+        Style::new().fg(MUTED),
     ));
     let block = Block::new()
         .borders(Borders::BOTTOM)
@@ -269,13 +270,15 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
     let items: Vec<ListItem> = browser
         .entries
         .iter()
-        .map(|entry| {
-            let line = match entry.kind {
+        .enumerate()
+        .map(|(index, entry)| {
+            let on = index == browser.selected;
+            let mut line = match entry.kind {
                 EntryKind::Analyze => Line::from(vec![
                     Span::styled("● ", Style::new().fg(ACCENT)),
                     Span::styled(
                         t.br_analyze,
-                        Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+                        Style::new().fg(FG).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 EntryKind::Parent => Line::from(vec![
@@ -284,31 +287,38 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
                     Span::styled(format!("  {}", t.br_parent), Style::new().fg(MUTED)),
                 ]),
                 EntryKind::Dir => {
-                    let mut spans = vec![
-                        Span::styled("  ", Style::new()),
-                        Span::styled(format!("{}/", entry.name), Style::new().fg(FG)),
-                    ];
+                    let mut spans = vec![Span::styled(
+                        format!("{}/", entry.name),
+                        Style::new().fg(FG),
+                    )];
                     if let Some(hint) = entry.hint {
                         let label = match hint {
                             Hint::Node => t.hint_node,
                             Hint::Git => t.hint_git,
                         };
-                        spans.push(Span::styled(format!("  {label}"), Style::new().fg(SAFE)));
+                        spans.push(Span::styled(format!("  {label}"), Style::new().fg(ACCENT)));
                     }
                     Line::from(spans)
                 }
             };
+            line.spans.insert(0, row_bar(on));
+            if on {
+                for span in line.spans.iter_mut().skip(1) {
+                    if span.style.fg == Some(FG) {
+                        span.style = span.style.fg(ACCENT);
+                    }
+                }
+            }
             ListItem::new(line)
         })
         .collect();
 
     let folders = browser.entries.len().saturating_sub(2);
-    let block = panel(&fill(t.br_folders, &[("n", &folders)]));
+    let block = focused_panel(&fill(t.br_folders, &[("n", &folders)]));
     browser.list_area = block.inner(body);
     let list = List::new(items)
         .block(block)
-        .highlight_style(Style::new().bg(BORDER).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▸ ");
+        .highlight_symbol(selected_symbol());
     browser.list_state.select(Some(browser.selected));
     frame.render_stateful_widget(list, body, &mut browser.list_state);
 
@@ -321,7 +331,7 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
                     &[("path", &path.display()), ("error", error)]
                 )
             ),
-            Style::new().fg(DANGER),
+            Style::new().fg(ACCENT),
         )),
         None => Line::from(Span::styled(
             format!(" {}", t.br_tip),
@@ -336,7 +346,7 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
         (".", t.br_hidden),
         ("~", t.br_home),
         ("L", t.key_language),
-        ("q", t.key_quit),
+        ("q", t.br_menu),
     ]);
     let click = Line::from(Span::styled(
         format!(" {}", t.br_click),
@@ -472,7 +482,7 @@ mod tests {
         assert_eq!(browser.selected, browser.entries.len() - 1);
         browser.handle_key(KeyCode::Char('g'));
         assert_eq!(browser.selected, 0);
-        assert_eq!(browser.handle_key(KeyCode::Char('q')), Some(Action::Quit));
+        assert_eq!(browser.handle_key(KeyCode::Char('q')), Some(Action::Back));
     }
 
     #[test]

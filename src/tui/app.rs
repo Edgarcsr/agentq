@@ -19,6 +19,8 @@ pub enum Command {
     Rescan,
     /// Go back to choosing a project.
     OpenBrowser,
+    /// Go back to the main menu.
+    OpenMenu,
 }
 
 /// The two pages of the results screen.
@@ -238,7 +240,8 @@ impl App {
                 if self.show_help {
                     self.show_help = false;
                 } else {
-                    self.should_quit = true;
+                    // One step back: the menu is where the app is left.
+                    return Some(Command::OpenMenu);
                 }
             }
             KeyCode::Char('?') | KeyCode::F(1) => self.show_help = !self.show_help,
@@ -276,6 +279,7 @@ impl App {
             }
             KeyCode::Char('r') => return Some(Command::Rescan),
             KeyCode::Char('b') => return Some(Command::OpenBrowser),
+            KeyCode::Char('m') => return Some(Command::OpenMenu),
             _ => {}
         }
         None
@@ -319,8 +323,8 @@ impl App {
                     }
                     Tab::Findings => {
                         if self.areas.list.contains(at) {
-                            // Each finding takes two rows.
-                            let rows_down = usize::from(row - self.areas.list.y) / 2;
+                            // Each finding takes one row.
+                            let rows_down = usize::from(row - self.areas.list.y);
                             let index = self.list_state.offset() + rows_down;
                             if index < self.visible().len() {
                                 self.select(index);
@@ -517,8 +521,7 @@ mod tests {
         assert_eq!(app.selected, 0);
         app.handle_key(KeyCode::Esc);
         assert!(!app.show_help && !app.should_quit);
-        app.handle_key(KeyCode::Char('q'));
-        assert!(app.should_quit);
+        assert_eq!(app.handle_key(KeyCode::Char('q')), Some(Command::OpenMenu));
     }
 
     #[test]
