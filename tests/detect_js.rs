@@ -751,3 +751,35 @@ fn jsrsasign_openpgp_and_libsodium() {
         ]
     );
 }
+
+#[test]
+fn better_auth_jwt_plugin_defaults_to_ed25519() {
+    let source = "
+        import { betterAuth } from 'better-auth';
+        import { jwt } from 'better-auth/plugins';
+        export const auth = betterAuth({ plugins: [jwt()] });
+    ";
+    assert_eq!(
+        detect(source),
+        vec![found("ed25519", Purpose::Signature, Some(256))]
+    );
+}
+
+#[test]
+fn better_auth_jwt_plugin_reads_the_configured_algorithm() {
+    let source = "
+        import { jwt } from 'better-auth/plugins';
+        jwt({ jwks: { keyPairConfig: { alg: 'RS256', modulusLength: 2048 } } });
+    ";
+    assert_eq!(detect(source), vec![found("rsa", Purpose::Signature, None)]);
+}
+
+#[test]
+fn better_auth_without_the_jwt_plugin_has_no_findings() {
+    let source = "
+        import { betterAuth } from 'better-auth';
+        import { twoFactor } from 'better-auth/plugins';
+        export const auth = betterAuth({ plugins: [twoFactor()] });
+    ";
+    assert_eq!(detect(source), vec![]);
+}
