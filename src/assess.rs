@@ -41,14 +41,11 @@ pub struct Assessment {
 
 /// Assesses `finding` against `knowledge`, writing the advice in `lang`.
 /// Returns `None` when the algorithm is not in the knowledge base.
-///
-/// The description of the algorithm itself comes from the knowledge base and
-/// is in English in every language.
 pub fn assess(finding: &Finding, knowledge: &KnowledgeBase, lang: Lang) -> Option<Assessment> {
     let algorithm = knowledge.get(&finding.algorithm)?;
     let urgency = urgency(algorithm.risk, finding.purpose);
 
-    let mut explanation = algorithm.rationale.clone();
+    let mut explanation = algorithm.rationale(lang).to_string();
     if let Some(context) = purpose_context(algorithm.risk, finding.purpose, lang) {
         explanation.push(' ');
         explanation.push_str(context);
@@ -60,8 +57,9 @@ pub fn assess(finding: &Finding, knowledge: &KnowledgeBase, lang: Lang) -> Optio
     let mut advice = Vec::new();
     if urgency != Urgency::None {
         advice.extend(migration_advice(algorithm.risk, finding.purpose, lang));
-        if !algorithm.notes.is_empty() {
-            advice.push(algorithm.notes.clone());
+        let notes = algorithm.notes(lang);
+        if !notes.is_empty() {
+            advice.push(notes.to_string());
         }
     }
     if finding.purpose == Purpose::Unknown && algorithm.risk == QuantumRisk::Broken {
