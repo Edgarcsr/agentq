@@ -287,13 +287,14 @@ texts! {
     key_language: "language", "idioma";
     key_help: "help", "ajuda";
     key_quit: "quit", "sair";
+    key_back: "back", "voltar";
     status_rescanned: "Scanned again: {uses} use(s) in {files} file(s)",
         "Análise refeita: {uses} uso(s) em {files} arquivo(s)";
     status_no_finding: "No finding with that urgency", "Nenhum achado com essa urgência";
 
     // --- terminal interface: background work ---
     loading: "Analyzing {path}", "Analisando {path}";
-    loading_hint: "Esc cancels · L language · q quits", "Esc cancela · L idioma · q sai";
+    loading_hint: "Esc cancels · L language · q menu", "Esc cancela · L idioma · q menu";
     scanning: "Scanning…", "Analisando…";
 
     // --- terminal interface: help ---
@@ -309,7 +310,7 @@ texts! {
     help_mouse: "click tabs and findings, wheel to scroll", "clicar em abas e achados, roda para rolar";
     help_language: "switch the language", "trocar o idioma";
     help_close: "close this help", "fechar esta ajuda";
-    help_quit: "quit", "sair";
+    help_quit: "back to the menu", "voltar ao menu";
     legend_high: "  HIGH  key exchange or encryption that quantum computers break",
         "  ALTA  troca de chaves ou cifragem que computadores quânticos quebram";
     legend_medium: "  MED   signatures that quantum computers could forge",
@@ -325,7 +326,7 @@ texts! {
     ov_weakened: "Weakened", "Enfraquecidos";
     ov_weakened_by_grover: "weakened by Grover", "enfraquecidos por Grover";
     ov_safe: "Already safe", "Já seguros";
-    ov_no_migration: "no migration needed", "sem necessidade de migração";
+    ov_no_migration: "no migration needed", "nada a migrar";
     ov_by_urgency: "By urgency", "Por urgência";
     ov_top_algorithms: "Top algorithms", "Algoritmos mais usados";
     ov_review_first: "Review first", "Revisar primeiro";
@@ -333,6 +334,9 @@ texts! {
     ov_none_to_show: "No cryptographic use to show.", "Nenhum uso de criptografia para mostrar.";
     ov_nothing: "Nothing to show.", "Nada para mostrar.";
     ov_no_sources: "No source files found.", "Nenhum arquivo-fonte encontrado.";
+
+    needs_terminal: "the interactive interface needs a terminal; use --format for piped output",
+        "a interface interativa precisa de um terminal; use --format para saída redirecionada";
 
     // --- terminal interface: folder browser ---
     br_title: "Choose a project to analyze", "Escolha um projeto para analisar";
@@ -351,6 +355,20 @@ texts! {
     br_hidden: "hidden", "ocultas";
     br_home: "home", "início";
     br_click: "click once to select, again to open", "clique para selecionar, de novo para abrir";
+    br_menu: "menu", "menu";
+
+    // --- terminal interface: main menu ---
+    menu_tagline: "Find quantum-vulnerable cryptography in your code",
+        "Ache criptografia vulnerável a computadores quânticos";
+    menu_browse: "Choose a project", "Escolher um projeto";
+    menu_browse_hint: "browse folders", "navegar pelas pastas";
+    menu_here: "Analyze this folder", "Analisar esta pasta";
+    menu_language: "Language", "Idioma";
+    menu_language_hint: "press Enter to switch", "Enter para trocar";
+    menu_quit: "Quit", "Sair";
+    menu_select: "select", "selecionar";
+    menu_choose: "choose", "escolher";
+    key_menu: "menu", "menu";
 }
 
 #[cfg(test)]

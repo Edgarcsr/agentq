@@ -7,56 +7,97 @@ use crate::i18n::{Lang, fill};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, Padding, Paragraph, Wrap};
 
-// The agentq palette.
+// The agentq palette: white text on a neutral background, with orange kept for
+// whatever has focus (the selected row, the active tab, the focused panel).
+// The other colors only carry meaning (risk), never decoration.
 pub(super) const ACCENT: Color = Color::Rgb(255, 138, 61);
-pub(super) const ACCENT_LIGHT: Color = Color::Rgb(255, 210, 161);
-pub(super) const FG: Color = Color::Rgb(245, 236, 228);
-pub(super) const MUTED: Color = Color::Rgb(160, 143, 128);
-pub(super) const BORDER: Color = Color::Rgb(51, 39, 29);
-pub(super) const DANGER: Color = Color::Rgb(255, 107, 91);
-pub(super) const SAFE: Color = Color::Rgb(142, 207, 160);
-pub(super) const ON_ACCENT: Color = Color::Rgb(26, 8, 0);
+pub(super) const FG: Color = Color::Rgb(245, 245, 245);
+pub(super) const MUTED: Color = Color::Rgb(138, 138, 138);
+pub(super) const BORDER: Color = Color::Rgb(70, 70, 70);
+pub(super) const KEY: Color = Color::Rgb(200, 200, 200);
+pub(super) const DIM: Color = Color::Rgb(98, 98, 98);
+// Risk is told by weight, not by hue: the worst level is an inverted badge and
+// the others fade through shades of gray, so orange is the only color.
+pub(super) const BAR: Color = Color::Rgb(176, 176, 176);
+pub(super) const ON_ACCENT: Color = Color::Rgb(20, 20, 20);
 
 /// Terminals narrower than this stack the list above the details.
 const WIDE: u16 = 100;
 
 pub(super) fn urgency_color(urgency: Urgency) -> Color {
     match urgency {
-        Urgency::High => DANGER,
-        Urgency::Medium => ACCENT,
-        Urgency::Low => ACCENT_LIGHT,
-        Urgency::None => SAFE,
+        Urgency::High => FG,
+        Urgency::Medium => KEY,
+        Urgency::Low => MUTED,
+        Urgency::None => DIM,
     }
 }
 
 pub(super) fn badge(urgency: Urgency, lang: Lang) -> Span<'static> {
+    badge_for(urgency, lang, false)
+}
+
+/// The badge of an urgency; on the selected row it turns orange.
+pub(super) fn badge_for(urgency: Urgency, lang: Lang, selected: bool) -> Span<'static> {
+    let color = if selected {
+        ACCENT
+    } else {
+        urgency_color(urgency)
+    };
+    let style = Style::new().fg(color).add_modifier(Modifier::BOLD);
     Span::styled(
         lang.badge(urgency),
-        Style::new()
-            .fg(ON_ACCENT)
-            .bg(urgency_color(urgency))
-            .add_modifier(Modifier::BOLD),
+        if urgency == Urgency::High {
+            style.fg(ON_ACCENT).bg(color)
+        } else {
+            style
+        },
     )
 }
 
 pub(super) fn panel(title: &str) -> Block<'static> {
+    framed(title, BORDER, MUTED)
+}
+
+/// A panel that has the focus: the only kind that is drawn in orange.
+pub(super) fn focused_panel(title: &str) -> Block<'static> {
+    framed(title, ACCENT, ACCENT)
+}
+
+fn framed(title: &str, border: Color, text: Color) -> Block<'static> {
     Block::bordered()
+        .border_type(BorderType::Rounded)
         .padding(Padding::horizontal(1))
-        .border_style(Style::new().fg(BORDER))
+        .border_style(Style::new().fg(border))
         .title(Span::styled(
             format!(" {title} "),
-            Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::new().fg(text).add_modifier(Modifier::BOLD),
         ))
+}
+
+/// Marker drawn before the selected row of a list.
+pub(super) fn selected_symbol() -> Line<'static> {
+    Line::from("")
+}
+
+/// The bar drawn at the left of every row of a list: orange on the selected
+/// one, blank on the others, as in the Bubbles list.
+pub(super) fn row_bar(selected: bool) -> Span<'static> {
+    if selected {
+        Span::styled("┃ ", Style::new().fg(ACCENT))
+    } else {
+        Span::raw("  ")
+    }
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     app.areas = Areas::default();
     let [header, body, footer] = Layout::vertical([
-        Constraint::Length(3),
+        Constraint::Length(4),
         Constraint::Min(6),
         Constraint::Length(2),
     ])
@@ -111,17 +152,6 @@ fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
         ),
     ]);
 
-    let tab = |label: String, active: bool| {
-        let style = if active {
-            Style::new()
-                .fg(ON_ACCENT)
-                .bg(ACCENT_LIGHT)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::new().fg(MUTED)
-        };
-        Span::styled(format!(" {label} "), style)
-    };
     let labels = [
         (format!("1 {}", t.tab_overview), Tab::Overview),
         (
@@ -129,58 +159,116 @@ fn render_header(frame: &mut Frame, area: Rect, app: &mut App) {
             Tab::Findings,
         ),
     ];
-    let mut spans = vec![Span::raw(" ")];
+    // Flat tabs on a rule: the active one is orange and its stretch of the rule
+    // is thick, so it reads as the open page.
+    let mut tabs = vec![Span::raw(" ")];
+    let mut rule = vec![Span::styled("─", Style::new().fg(BORDER))];
     let mut x = area.x.saturating_add(1);
     for (label, which) in &labels {
-        let span = tab(label.clone(), app.tab == *which);
-        let width = span.width() as u16;
+        let active = app.tab == *which;
+        let text = format!(" {label} ");
+        let width = text.chars().count();
+        tabs.push(Span::styled(
+            text,
+            if active {
+                Style::new()
+                    .fg(ON_ACCENT)
+                    .bg(ACCENT)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(MUTED)
+            },
+        ));
+        tabs.push(Span::raw(" "));
+        rule.push(Span::styled(
+            if active { "━" } else { "─" }.repeat(width),
+            Style::new().fg(if active { ACCENT } else { BORDER }),
+        ));
+        rule.push(Span::styled("─", Style::new().fg(BORDER)));
+        let total = (width + 1) as u16;
         app.areas.tabs.push((
-            Rect::new(x, area.y.saturating_add(1), width, 1).intersection(area),
+            Rect::new(x, area.y.saturating_add(2), total, 1).intersection(area),
             *which,
         ));
-        x = x.saturating_add(width).saturating_add(1);
-        spans.push(span);
-        spans.push(Span::raw(" "));
+        x = x.saturating_add(total);
     }
-    let tabs = Line::from(spans);
+    let used = x.saturating_sub(area.x) as usize;
+    rule.push(Span::styled(
+        "─".repeat((area.width as usize).saturating_sub(used)),
+        Style::new().fg(BORDER),
+    ));
 
-    let block = Block::new()
-        .borders(Borders::BOTTOM)
-        .border_style(Style::new().fg(BORDER));
-    frame.render_widget(Paragraph::new(vec![title, tabs]).block(block), area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            title,
+            Line::raw(""),
+            Line::from(tabs),
+            Line::from(rule),
+        ]),
+        area,
+    );
 }
 
 fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let root = app.root.clone();
     let lang = app.lang;
     let t = lang.t();
-    let items: Vec<ListItem> = app
-        .visible()
+    let selected = app.selected;
+    let inner_width = usize::from(panel("").inner(area).width);
+    let visible = app.visible();
+    // Columns are as wide as their widest cell (capped), so rows line up.
+    let name_width = visible
         .iter()
-        .map(|a| {
+        .map(|a| a.algorithm_name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(22);
+    let purpose_width = visible
+        .iter()
+        .map(|a| lang.purpose(a.finding.purpose).chars().count())
+        .max()
+        .unwrap_or(0);
+    // bar (2) + badge (6) + gaps; whatever is left goes to the location.
+    let used = 2 + 6 + 1 + name_width + 2 + purpose_width + 2;
+    let location_width = inner_width.saturating_sub(used);
+    let items: Vec<ListItem> = visible
+        .iter()
+        .enumerate()
+        .map(|(index, a)| {
+            let on = index == selected;
             let finding = &a.finding;
             let location = finding
                 .file
                 .strip_prefix(&root)
                 .unwrap_or(&finding.file)
                 .display();
-            let first = Line::from(vec![
-                badge(a.urgency, lang),
+            let mut spans = vec![
+                row_bar(on),
+                badge_for(a.urgency, lang, on),
                 Span::raw(" "),
                 Span::styled(
-                    a.algorithm_name.clone(),
-                    Style::new().fg(FG).add_modifier(Modifier::BOLD),
+                    format!(
+                        "{:<name_width$}",
+                        a.algorithm_name
+                            .chars()
+                            .take(name_width)
+                            .collect::<String>()
+                    ),
+                    Style::new()
+                        .fg(if on { ACCENT } else { FG })
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("  {}", lang.purpose(finding.purpose)),
+                    format!("  {:<purpose_width$}", lang.purpose(finding.purpose)),
                     Style::new().fg(MUTED),
                 ),
-            ]);
-            let second = Line::from(Span::styled(
-                format!("       {location}:{}", finding.line),
-                Style::new().fg(MUTED),
-            ));
-            ListItem::new(Text::from(vec![first, second]))
+            ];
+            if location_width >= 12 {
+                let place = format!("{location}:{}", finding.line);
+                spans.push(Span::raw("  "));
+                spans.extend(super::overview::path_spans(&place, location_width));
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
@@ -203,9 +291,8 @@ fn render_list(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let list = List::new(items)
-        .block(panel(&title))
-        .highlight_style(Style::new().bg(BORDER).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▸ ");
+        .block(focused_panel(&title))
+        .highlight_symbol(selected_symbol());
     app.list_state.select(Some(app.selected));
     frame.render_stateful_widget(list, area, &mut app.list_state);
 }
@@ -218,15 +305,19 @@ fn field(label: &str, value: Span<'static>) -> Line<'static> {
 }
 
 fn heading(text: &str) -> Line<'static> {
-    Line::from(Span::styled(
-        text.to_string(),
-        Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
-    ))
+    Line::from(vec![
+        Span::styled("── ", Style::new().fg(DIM)),
+        Span::styled(
+            text.to_string(),
+            Style::new().fg(FG).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ──", Style::new().fg(DIM)),
+    ])
 }
 
 fn bullet(text: &str) -> Line<'static> {
     Line::from(vec![
-        Span::styled("  • ", Style::new().fg(ACCENT)),
+        Span::styled("  • ", Style::new().fg(MUTED)),
         Span::styled(text.to_string(), Style::new().fg(FG)),
     ])
 }
@@ -237,9 +328,17 @@ fn detail_lines(a: &Assessment, root: &str, lang: Lang) -> Vec<Line<'static>> {
     let finding = &a.finding;
     let location = finding.file.strip_prefix(root).unwrap_or(&finding.file);
     let mut lines = vec![
+        Line::from(vec![
+            badge(a.urgency, lang),
+            Span::raw(" "),
+            Span::styled(
+                a.algorithm_name.clone(),
+                Style::new().fg(FG).add_modifier(Modifier::BOLD),
+            ),
+        ]),
         Line::from(Span::styled(
-            a.algorithm_name.clone(),
-            Style::new().fg(FG).add_modifier(Modifier::BOLD),
+            format!("{}:{}:{}", location.display(), finding.line, finding.column),
+            Style::new().fg(MUTED),
         )),
         Line::raw(""),
         field(
@@ -274,20 +373,12 @@ fn detail_lines(a: &Assessment, root: &str, lang: Lang) -> Vec<Line<'static>> {
         t.label_confidence,
         Span::styled(lang.confidence(finding.confidence), Style::new().fg(FG)),
     ));
-    lines.push(field(
-        t.label_location,
-        Span::styled(
-            format!("{}:{}:{}", location.display(), finding.line, finding.column),
-            Style::new().fg(FG),
-        ),
-    ));
-
     lines.push(Line::raw(""));
     lines.push(heading(t.h_code));
-    lines.push(Line::from(Span::styled(
-        format!("  {}", finding.snippet),
-        Style::new().fg(ACCENT_LIGHT),
-    )));
+    lines.push(Line::from(vec![
+        Span::styled("  ▎ ", Style::new().fg(ACCENT)),
+        Span::styled(finding.snippet.clone(), Style::new().fg(FG)),
+    ]));
 
     lines.push(Line::raw(""));
     lines.push(heading(t.h_why));
@@ -363,11 +454,11 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         ),
         Span::styled(
             format!("{} ", fill(t.footer_broken, &[("n", &counts.broken)])),
-            Style::new().fg(DANGER),
+            Style::new().fg(FG).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("{} ", fill(t.footer_weakened, &[("n", &counts.weakened)])),
-            Style::new().fg(ACCENT_LIGHT),
+            Style::new().fg(FG),
         ),
         Span::styled(
             fill(t.footer_safe, &[("n", &counts.safe)]),
@@ -404,14 +495,14 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             key_hints(&[
                 ("↑↓", t.key_select),
                 ("1 2", t.key_tabs),
-                ("PgUp/PgDn", t.key_scroll),
                 ("s", t.key_hide_safe),
                 ("c", t.key_confidence),
                 ("r", t.key_rescan),
                 ("b", t.key_browse),
+                ("m", t.key_menu),
                 ("L", t.key_language),
                 ("?", t.key_help),
-                ("q", t.key_quit),
+                ("q", t.key_back),
             ]),
         ]),
         area,
@@ -423,13 +514,10 @@ pub(super) fn key_hints(pairs: &[(&str, &str)]) -> Line<'static> {
     let mut spans = vec![Span::styled(" ", Style::new().fg(MUTED))];
     for (index, (key, meaning)) in pairs.iter().enumerate() {
         if index > 0 {
-            spans.push(Span::raw("  "));
+            spans.push(Span::styled(" • ", Style::new().fg(DIM)));
         }
-        spans.push(Span::styled(
-            key.to_string(),
-            Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(format!(" {meaning}"), Style::new().fg(MUTED)));
+        spans.push(Span::styled(key.to_string(), Style::new().fg(KEY)));
+        spans.push(Span::styled(format!(" {meaning}"), Style::new().fg(DIM)));
     }
     Line::from(spans)
 }
@@ -444,6 +532,7 @@ fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
         ("c", t.help_confidence),
         ("r", t.help_rescan),
         ("b", t.help_browse),
+        ("m", t.key_menu),
         ("1  2  Tab", t.help_tabs),
         ("mouse", t.help_mouse),
         ("L", t.help_language),
@@ -455,9 +544,9 @@ fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {keys:<20}"),
-                Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::new().fg(FG).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(what, Style::new().fg(FG)),
+            Span::styled(what, Style::new().fg(MUTED)),
         ]));
     }
     lines.push(Line::raw(""));
@@ -477,7 +566,7 @@ fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(panel(t.help_title)),
+            .block(focused_panel(t.help_title)),
         popup,
     );
 }

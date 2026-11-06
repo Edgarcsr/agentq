@@ -16,6 +16,7 @@
 mod app;
 mod browser;
 mod loading;
+mod menu;
 mod overview;
 mod ui;
 
@@ -27,6 +28,7 @@ use crate::finding::Confidence;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
 use browser::Action;
+use menu::{Action as MenuAction, Menu};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::crossterm::event::{
@@ -38,7 +40,7 @@ use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Something that happened.
 pub enum Msg {
@@ -71,6 +73,8 @@ pub enum Cmd {
 
 /// The screen being shown.
 enum Screen {
+    /// The main menu.
+    Menu(Menu),
     /// Choosing the project to analyze.
     Browse(Browser),
     /// Waiting for the analysis of a folder.
@@ -103,9 +107,7 @@ impl Tui {
         lang: Lang,
     ) -> Tui {
         let mut tui = Tui {
-            screen: Screen::Browse(Browser::new(
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            )),
+            screen: Screen::Menu(Menu::new()),
             hide_safe,
             min_confidence,
             lang,
@@ -130,6 +132,11 @@ impl Tui {
         self.pending.is_some()
     }
 
+    /// Whether the screen moves by itself and needs frequent redraws.
+    pub fn is_animated(&self) -> bool {
+        matches!(self.screen, Screen::Menu(_))
+    }
+
     /// Takes the commands the last updates asked for.
     pub fn drain_commands(&mut self) -> Vec<Cmd> {
         std::mem::take(&mut self.outbox)
@@ -141,7 +148,12 @@ impl Tui {
             Msg::Key(code) => self.on_key(code),
             Msg::Mouse { kind, column, row } => self.on_mouse(kind, column, row),
             Msg::Quit => self.quit = true,
-            Msg::Tick => self.spinner = self.spinner.wrapping_add(1),
+            Msg::Tick => {
+                self.spinner = self.spinner.wrapping_add(1);
+                if let Screen::Menu(menu) = &mut self.screen {
+                    menu.tick();
+                }
+            }
             Msg::Scanned {
                 id,
                 path,
@@ -207,19 +219,44 @@ impl Tui {
         self.screen = Screen::Browse(browser);
     }
 
+    /// Goes back to the main menu, dropping whatever was running.
+    fn open_menu(&mut self) {
+        self.pending = None;
+        self.screen = Screen::Menu(Menu::new());
+    }
+
+    fn here() -> PathBuf {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    }
+
+    fn on_menu(&mut self, action: Option<MenuAction>) {
+        match action {
+            Some(MenuAction::Browse) => self.screen = Screen::Browse(Browser::new(Tui::here())),
+            Some(MenuAction::AnalyzeHere) => self.scan(Tui::here(), false),
+            Some(MenuAction::SwitchLanguage) => self.lang = self.lang.other(),
+            Some(MenuAction::Quit) => self.quit = true,
+            None => {}
+        }
+    }
+
     fn on_key(&mut self, code: KeyCode) {
         match &mut self.screen {
+            Screen::Menu(menu) => {
+                let action = menu.handle_key(code);
+                self.on_menu(action);
+            }
             Screen::Browse(_) if code == KeyCode::Char('L') => self.lang = self.lang.other(),
             Screen::Browse(browser) => match browser.handle_key(code) {
                 Some(Action::Analyze(path)) => self.scan(path, false),
-                Some(Action::Quit) => self.quit = true,
+                Some(Action::Back) => self.open_menu(),
                 None => {}
             },
             Screen::Loading(path) => {
                 let path = path.clone();
                 match code {
                     KeyCode::Esc => self.open_browser(&path),
-                    KeyCode::Char('q') => self.quit = true,
+                    KeyCode::Char('m') => self.open_menu(),
+                    KeyCode::Char('q') => self.open_menu(),
                     KeyCode::Char('L') => self.lang = self.lang.other(),
                     _ => {}
                 }
@@ -236,6 +273,7 @@ impl Tui {
                 match command {
                     Some(Command::Rescan) if !app.scanning => self.scan(root, true),
                     Some(Command::OpenBrowser) => self.open_browser(&root),
+                    Some(Command::OpenMenu) => self.open_menu(),
                     _ => {}
                 }
             }
@@ -244,9 +282,13 @@ impl Tui {
 
     fn on_mouse(&mut self, kind: MouseEventKind, column: u16, row: u16) {
         match &mut self.screen {
+            Screen::Menu(menu) => {
+                let action = menu.handle_mouse(kind, column, row);
+                self.on_menu(action);
+            }
             Screen::Browse(browser) => match browser.handle_mouse(kind, column, row) {
                 Some(Action::Analyze(path)) => self.scan(path, false),
-                Some(Action::Quit) => self.quit = true,
+                Some(Action::Back) => self.open_menu(),
                 None => {}
             },
             Screen::Loading(_) => {}
@@ -256,6 +298,10 @@ impl Tui {
 
     pub fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
+            Screen::Menu(menu) => {
+                let here = Tui::here().display().to_string();
+                menu::render(frame, menu, self.lang, &here)
+            }
             Screen::Browse(browser) => browser::render(frame, browser, self.lang),
             Screen::Loading(path) => loading::render(frame, path, self.spinner, self.lang),
             Screen::Results(app) => {
@@ -297,9 +343,7 @@ pub fn run(
     lang: Lang,
 ) -> io::Result<()> {
     if !io::stdout().is_terminal() {
-        return Err(io::Error::other(
-            "the interactive interface needs a terminal; use --format for piped output",
-        ));
+        return Err(io::Error::other(lang.t().needs_terminal));
     }
     let mut tui = Tui::start(start, hide_safe, min_confidence, lang);
     let mut terminal = ratatui::try_init()?;
@@ -320,36 +364,63 @@ pub fn run(
 const BUSY_POLL: Duration = Duration::from_millis(80);
 /// How long to wait for input when nothing runs.
 const IDLE_POLL: Duration = Duration::from_millis(250);
+/// Time between frames of an animated screen (about 30 per second).
+const FRAME: Duration = Duration::from_millis(33);
 
 fn event_loop(terminal: &mut DefaultTerminal, tui: &mut Tui) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
+    let mut last_frame = Instant::now();
     while !tui.should_quit() {
         for cmd in tui.drain_commands() {
             perform(cmd, &tx);
         }
         terminal.draw(|frame| tui.render(frame))?;
 
-        let wait = if tui.is_busy() { BUSY_POLL } else { IDLE_POLL };
-        if event::poll(wait)? {
-            // Resize and other events fall through and just trigger a redraw.
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
-                        && key.code == KeyCode::Char('c');
-                    tui.update(if ctrl_c {
-                        Msg::Quit
-                    } else {
-                        Msg::Key(key.code)
-                    });
-                }
-                Event::Mouse(mouse) => tui.update(Msg::Mouse {
-                    kind: mouse.kind,
-                    column: mouse.column,
-                    row: mouse.row,
-                }),
-                _ => {}
-            }
+        let animated = tui.is_animated();
+        let wait = if animated {
+            FRAME.saturating_sub(last_frame.elapsed())
         } else if tui.is_busy() {
+            BUSY_POLL
+        } else {
+            IDLE_POLL
+        };
+        let mut had_input = false;
+        if event::poll(wait)? {
+            had_input = true;
+            // Take everything that is waiting before drawing again: a moving
+            // mouse sends hundreds of events a second and each one must not
+            // cost a redraw.
+            loop {
+                // Resize and other events fall through and just trigger a redraw.
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('c');
+                        tui.update(if ctrl_c {
+                            Msg::Quit
+                        } else {
+                            Msg::Key(key.code)
+                        });
+                    }
+                    Event::Mouse(mouse) => tui.update(Msg::Mouse {
+                        kind: mouse.kind,
+                        column: mouse.column,
+                        row: mouse.row,
+                    }),
+                    _ => {}
+                }
+                if !event::poll(Duration::ZERO)? {
+                    break;
+                }
+            }
+        }
+        if animated {
+            // The animation follows the clock, not the input.
+            if last_frame.elapsed() >= FRAME {
+                tui.update(Msg::Tick);
+                last_frame = Instant::now();
+            }
+        } else if !had_input && tui.is_busy() {
             tui.update(Msg::Tick);
         }
         while let Ok(msg) = rx.try_recv() {

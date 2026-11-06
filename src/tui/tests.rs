@@ -71,7 +71,7 @@ fn wide_layout_shows_header_list_details_and_footer() {
         "3 use(s)",
         "2 broken",
         "hide safe: off",
-        "quit",
+        "back",
     ] {
         assert!(
             screen.contains(expected),
@@ -146,7 +146,7 @@ fn help_overlay_lists_the_keys() {
         "Help",
         "select a finding",
         "scan the directory again",
-        "quit",
+        "back to the menu",
     ] {
         assert!(
             screen.contains(expected),
@@ -301,13 +301,13 @@ fn clicking_a_finding_selects_it() {
     let mut app = app();
     draw(&mut app, 120, 32);
     let list = app.areas.list;
-    // Each finding takes two rows: the second row of the third one is still the third.
-    click(&mut app, list.x + 2, list.y + 5);
+    // Each finding takes one row.
+    click(&mut app, list.x + 2, list.y + 2);
     assert_eq!(app.selected, 2);
     click(&mut app, list.x + 2, list.y);
     assert_eq!(app.selected, 0);
     // Below the last finding nothing changes.
-    click(&mut app, list.x + 2, list.y + 8);
+    click(&mut app, list.x + 2, list.y + 5);
     assert_eq!(app.selected, 0);
     // Neither does a click outside the list.
     click(&mut app, 0, 0);
@@ -490,12 +490,6 @@ fn a_path_skips_the_browser() {
 }
 
 #[test]
-fn without_a_path_it_starts_on_the_browser() {
-    let tui = Tui::start(None, false, Confidence::Low, Lang::En);
-    assert!(matches!(tui.screen, Screen::Browse(_)));
-}
-
-#[test]
 fn choosing_a_folder_shows_its_results_and_b_goes_back() {
     let samples = sample().parent().unwrap().to_path_buf();
     let mut tui = Tui::start(None, true, Confidence::Medium, Lang::En);
@@ -528,12 +522,15 @@ fn choosing_a_folder_shows_its_results_and_b_goes_back() {
 }
 
 #[test]
-fn quitting_works_from_both_screens() {
+fn q_steps_back_and_only_the_menu_quits() {
     let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     press(&mut tui, KeyCode::Char('q'));
     assert!(tui.should_quit());
 
     let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    press(&mut tui, KeyCode::Char('q'));
+    assert!(!tui.should_quit());
+    assert!(matches!(tui.screen, Screen::Menu(_)));
     press(&mut tui, KeyCode::Char('q'));
     assert!(tui.should_quit());
 }
@@ -611,14 +608,13 @@ fn the_findings_page_in_portuguese() {
         "Biblioteca",
         "Confiança",
         "Alta",
-        "Local",
         "Código",
         "Por que importa",
         "Substituir por",
         "3 uso(s)",
         "2 quebrado(s)",
         "ocultar seguros: desativado · confiança mínima: Baixa",
-        "sair",
+        "voltar",
     ] {
         assert!(
             screen.contains(expected),
@@ -638,7 +634,7 @@ fn the_overview_in_portuguese() {
         "quebrados por Shor",
         "Enfraquecidos",
         "Já seguros",
-        "sem necessidade de migração",
+        "nada a migrar",
         "Por urgência",
         "Algoritmos mais usados",
         "Revisar primeiro",
@@ -897,6 +893,7 @@ fn a_scan_runs_on_a_background_thread_and_reports_back() {
 fn the_busy_state_follows_the_scans() {
     let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     assert!(!tui.is_busy());
+    tui.update(Msg::Key(KeyCode::Enter));
     let Screen::Browse(browser) = &mut tui.screen else {
         unreachable!()
     };
@@ -907,4 +904,76 @@ fn the_busy_state_follows_the_scans() {
     assert!(matches!(tui.screen, Screen::Loading(_)));
     settle(&mut tui);
     assert!(!tui.is_busy());
+}
+
+fn menu_tui() -> Tui {
+    Tui::start(None, false, Confidence::Low, Lang::En)
+}
+
+#[test]
+fn without_a_path_it_starts_on_the_main_menu() {
+    let mut tui = menu_tui();
+    let screen = draw_tui(&mut tui, 100, 24);
+    for expected in [
+        "Choose a project",
+        "Analyze this folder",
+        "Language: English",
+        "Quit",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+}
+
+#[test]
+fn the_menu_opens_the_browser_and_the_browser_goes_back() {
+    let mut tui = menu_tui();
+    draw_tui(&mut tui, 100, 24);
+    tui.update(Msg::Key(KeyCode::Enter));
+    assert!(matches!(tui.screen, Screen::Browse(_)));
+    // Leaving the browser returns to the menu instead of quitting.
+    tui.update(Msg::Key(KeyCode::Esc));
+    assert!(matches!(tui.screen, Screen::Menu(_)));
+    assert!(!tui.should_quit());
+}
+
+#[test]
+fn the_menu_switches_language_and_quits() {
+    let mut tui = menu_tui();
+    tui.update(Msg::Key(KeyCode::Char('L')));
+    assert!(draw_tui(&mut tui, 100, 24).contains("Idioma: Português"));
+    tui.update(Msg::Key(KeyCode::Char('q')));
+    assert!(tui.should_quit());
+}
+
+#[test]
+fn the_menu_can_be_clicked() {
+    let mut tui = menu_tui();
+    draw_tui(&mut tui, 100, 24);
+    let Screen::Menu(menu) = &tui.screen else {
+        unreachable!()
+    };
+    let list = menu.list_area;
+    let click = |tui: &mut Tui, row: u16| {
+        tui.update(Msg::Mouse {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: list.x + 3,
+            row,
+        })
+    };
+    // The first click selects the last item, the second one runs it.
+    click(&mut tui, list.y + 3);
+    assert!(!tui.should_quit());
+    click(&mut tui, list.y + 3);
+    assert!(tui.should_quit());
+}
+
+#[test]
+fn results_go_back_to_the_menu_with_m() {
+    let mut tui = menu_tui();
+    tui.screen = Screen::Results(Box::new(app()));
+    tui.update(Msg::Key(KeyCode::Char('m')));
+    assert!(matches!(tui.screen, Screen::Menu(_)));
 }
