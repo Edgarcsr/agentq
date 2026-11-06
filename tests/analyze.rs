@@ -243,10 +243,10 @@ fn lang_flag_switches_the_report_to_portuguese() {
             "missing `{expected}` in:\n{text}"
         );
     }
-    // The labels are translated; the description of each algorithm comes from the
-    // knowledge base and stays in English.
+    // The labels and the description of each algorithm are translated.
     assert!(!text.contains("Replace with:"));
-    assert!(text.contains("Security rests on integer factoring"));
+    assert!(!text.contains("Security rests on integer factoring"));
+    assert!(text.contains("A segurança depende da fatoração de inteiros"));
 }
 
 #[test]

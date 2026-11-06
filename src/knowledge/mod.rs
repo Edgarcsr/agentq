@@ -2,6 +2,7 @@
 //! them and which post-quantum algorithms can replace them.
 
 use crate::finding::{Purpose, QuantumRisk};
+use crate::i18n::Lang;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -38,10 +39,34 @@ pub struct Algorithm {
     pub pqc_alternatives: Vec<String>,
     pub rationale: String,
     pub notes: String,
+    /// Portuguese version of `rationale`.
+    #[serde(default)]
+    pub rationale_pt: String,
+    /// Portuguese version of `notes`.
+    #[serde(default)]
+    pub notes_pt: String,
     pub references: Vec<String>,
     /// Libraries or platforms that implement this algorithm (post-quantum entries only).
     #[serde(default)]
     pub implementations: Vec<String>,
+}
+
+impl Algorithm {
+    /// Why the algorithm is (or is not) exposed, in `lang`.
+    pub fn rationale(&self, lang: Lang) -> &str {
+        match lang {
+            Lang::PtBr if !self.rationale_pt.is_empty() => &self.rationale_pt,
+            _ => &self.rationale,
+        }
+    }
+
+    /// Practical notes about the algorithm, in `lang`.
+    pub fn notes(&self, lang: Lang) -> &str {
+        match lang {
+            Lang::PtBr if !self.notes_pt.is_empty() => &self.notes_pt,
+            _ => &self.notes,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +178,14 @@ mod tests {
         let kb = KnowledgeBase::embedded();
         for id in ["ml-kem", "ml-dsa", "slh-dsa"] {
             assert!(!kb.get(id).unwrap().implementations.is_empty(), "{id}");
+        }
+    }
+
+    #[test]
+    fn every_description_is_translated() {
+        for algorithm in KnowledgeBase::embedded().algorithms() {
+            assert!(!algorithm.rationale_pt.is_empty(), "{}", algorithm.id);
+            assert!(!algorithm.notes_pt.is_empty(), "{}", algorithm.id);
         }
     }
 
