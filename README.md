@@ -2,53 +2,23 @@
   <img alt="agentq — Spot quantum-vulnerable cryptography" src="assets/banner/banner.png" />
 </p>
 
-<p align="center">
-  <img alt="Rust 2024" src="https://shieldcn.dev/badge/Rust-2024-ff8a3d.svg?variant=outline&amp;logo=rust" />
-  <img alt="ratatui 0.30" src="https://shieldcn.dev/badge/ratatui-0.30-ff8a3d.svg?variant=outline" />
-  <img alt="crossterm 0.29" src="https://shieldcn.dev/badge/crossterm-0.29-ff8a3d.svg?variant=outline" />
-  <img alt="ignore 0.4" src="https://shieldcn.dev/badge/ignore-0.4-ff8a3d.svg?variant=outline" />
-</p>
-
 # agentq
 
 A proposed tool for analyzing source code, identifying uses of cryptography that may be vulnerable to quantum computing, and recommending post-quantum alternatives suited to the system's context.
 
 > **Status:** this project is in the concept and scope definition stage for an undergraduate final project (TCC, in Brazil). Source scanning and cryptography detection for JavaScript/TypeScript are implemented (see [Current prototype](#current-prototype)); the remaining features described below are planned.
 
-## About the project
-
-**agentq** started with the idea of helping developers understand how their systems use cryptography and how they can prepare for the challenges posed by quantum computing.
-
-The proposal is to analyze another system's source code, locate cryptographic operations, assess their potential vulnerability to quantum attacks, and suggest alternatives with greater resistance to those attacks. Recommendations should take into account the purpose of each operation and the requirements of the system being analyzed.
-
-## Motivation
+# Motivation
 
 Sufficiently powerful quantum computers could compromise public-key cryptographic mechanisms in use today. Post-quantum cryptography aims to provide alternatives that resist these attacks and run on conventional computers. This field is the subject of research and standardization efforts by [NIST](https://www.nist.gov/pqc).
 
-Identifying where and how cryptography is used is an important step in planning a migration. agentq aims to support this work through code analysis and recommendations tailored to each use case.
+## Specific objectives
 
-## Goal
-
-Research and develop a tool that helps identify uses of cryptography vulnerable to quantum computing and select appropriate post-quantum alternatives.
-
-### Specific objectives
-
-- Identify cryptographic algorithms, libraries, and calls in source code.
-- Locate the files and code sections associated with each finding.
+- Identify cryptographic algorithms, libraries, and calls in source code, in the languages supported by the tool.
 - Analyze the purpose of each operation, such as key establishment or digital signatures.
 - Explain the risks associated with the identified mechanisms.
 - Recommend alternatives considering security, compatibility, and performance.
 - Present the results in a report that developers can understand.
-
-## Proposed workflow
-
-1. **Input:** receive a project's source code for analysis.
-2. **Identification:** locate uses of cryptography in the languages and libraries supported by the tool.
-3. **Assessment:** map the identified mechanisms to known risks from quantum attacks.
-4. **Recommendation:** suggest post-quantum alternatives suited to the purpose of each use and explain the reasoning behind them.
-5. **Report:** compile the findings, their locations, associated risks, and recommendations.
-
-Recommendations should support the technical assessment of the team responsible for the system. The suitability of an alternative depends on the context, and the analysis does not guarantee security.
 
 ## Current prototype
 
@@ -70,7 +40,7 @@ flowchart TD
     scan --> route{"Language of<br/>each file"}
 
     route -->|"JS / TS<br/>.js .jsx .mjs .cjs .ts .tsx .mts .cts"| parse
-    route -->|"Python, Java, Go"| pending["Listed only<br/>analyzers not built yet"]
+    route -->|"Python, Java, Go"| pending["Show as <br/>'analyzers not built yet'"]
 
     subgraph jstrack ["JS/TS track"]
         direction TB
@@ -89,8 +59,7 @@ flowchart TD
     infer -.-> metrics
 ```
 
-Recognized APIs: Node.js `crypto`, Web Crypto (`crypto.subtle`), `jsonwebtoken`, `jose`, `node-forge`, `node-rsa`, `elliptic`, `tweetnacl`, `@noble/curves`, `@noble/ed25519`, `@noble/secp256k1`, `crypto-js`, `jsrsasign`, `openpgp`, and `libsodium`. Post-quantum usage (`ml-kem`, `ml-dsa`, `slh-dsa` in `node:crypto` and `@noble/post-quantum`) is reported as safe.
-
+# Usage
 ```sh
 cargo run -- <directory>                      # defaults to the current directory
 cargo run -- <directory> --format markdown    # text (default), json, or markdown
@@ -143,7 +112,7 @@ The interface is structured like a [Bubble Tea](https://github.com/charmbracelet
 
 ### Language
 
-The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese), and is English when it is neither. In the terminal interface, `L` switches it on the fly.
+The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese, all empty give English). In the terminal interface, `L` switches it on the fly.
 
 ```sh
 cargo run -- samples/node-shop --lang pt-BR
@@ -154,7 +123,7 @@ JSON output keeps its field names and machine values (`urgency`, `purpose`, ...)
 
 ### Evaluation
 
-`cargo run --bin eval` scores the analyzer on an annotated corpus (`eval/corpus/node`, markers like `// @expect md5:hash`) and compares it with a keyword search, the way a developer would use `grep`. Current results, also saved in [`eval/results/node.md`](eval/results/node.md):
+`cargo run --bin eval` scores agenq's semantic analyser on an annotated corpus (`eval/corpus/node`, markers like `// @expect md5:hash`) and compares it with a keyword search (the way a developer would use `grep`). Current results, also saved in [`eval/results/node.md`](eval/results/node.md):
 
 | | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: |
@@ -185,10 +154,10 @@ The corpus was written by the authors of the analyzer, so these numbers show reg
 
 ## Team
 
-- Henrico Birochi
 - Edgar Camacho Seabra Ribeiro
-- Vítor Agostino Braghittoni
+- Henrico Birochi
 - Nicholas Birochi
+- Vítor Agostino Braghittoni
 
 ## Initial references
 
