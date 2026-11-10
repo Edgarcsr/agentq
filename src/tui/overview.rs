@@ -1,10 +1,10 @@
 //! The overview page: totals and rankings across all findings.
 
 use super::app::App;
-use super::ui::{ACCENT, ACCENT_LIGHT, DANGER, FG, MUTED, SAFE, badge, panel, urgency_color};
+use super::ui::{BAR, BORDER, DIM, FG, MUTED, badge, panel, urgency_color};
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use std::path::Path;
@@ -15,79 +15,60 @@ const BADGE_WIDTH: usize = 7;
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let t = app.lang.t();
     let counts = app.counts();
-    let [cards, middle, bottom] = Layout::vertical([
-        Constraint::Length(5),
-        Constraint::Fill(1),
-        Constraint::Fill(1),
-    ])
-    .areas(area);
+    let [stats, body] = Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).areas(area);
 
-    let columns: [Rect; 4] = Layout::horizontal([Constraint::Fill(1); 4]).areas(cards);
-    card(
-        frame,
-        columns[0],
-        t.ov_files,
-        app.file_count,
-        t.ov_scanned,
-        FG,
-    );
-    card(
+    // Totals as one strip: the number is what the eye should land on.
+    let columns: [Rect; 4] = Layout::horizontal([Constraint::Fill(1); 4]).areas(stats);
+    stat(frame, columns[0], t.ov_files, app.file_count, t.ov_scanned);
+    stat(
         frame,
         columns[1],
         t.ov_vulnerable,
         counts.broken,
         t.ov_broken_by_shor,
-        DANGER,
     );
-    card(
+    stat(
         frame,
         columns[2],
         t.ov_weakened,
         counts.weakened,
         t.ov_weakened_by_grover,
-        ACCENT_LIGHT,
     );
-    card(
-        frame,
-        columns[3],
-        t.ov_safe,
-        counts.safe,
-        t.ov_no_migration,
-        SAFE,
-    );
+    stat(frame, columns[3], t.ov_safe, counts.safe, t.ov_no_migration);
 
+    let [left, right] = Layout::horizontal([Constraint::Percentage(50); 2]).areas(body);
     let [urgency_area, algorithms_area] =
-        Layout::horizontal([Constraint::Percentage(50); 2]).areas(middle);
+        Layout::vertical([Constraint::Length(6), Constraint::Fill(1)]).areas(left);
+    let languages_height = (app.languages().len().max(1) as u16 + 2).min(right.height / 2);
+    let [files_area, languages_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(languages_height)]).areas(right);
     render_urgency(frame, urgency_area, app);
     render_algorithms(frame, algorithms_area, app);
-
-    let [files_area, languages_area] =
-        Layout::horizontal([Constraint::Percentage(50); 2]).areas(bottom);
     render_files(frame, files_area, app);
     render_languages(frame, languages_area, app);
 }
 
-fn card(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    value: usize,
-    caption: &str,
-    color: ratatui::style::Color,
-) {
+/// One total: a colored rule at the left, the label, the number, a caption.
+fn stat(frame: &mut Frame, area: Rect, title: &str, value: usize, caption: &str) {
+    let rule = Span::styled("┃ ", Style::new().fg(BORDER));
     let lines = vec![
-        Line::from(Span::styled(
-            value.to_string(),
-            Style::new().fg(color).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(caption.to_string(), Style::new().fg(MUTED))),
+        Line::from(vec![
+            rule.clone(),
+            Span::styled(title.to_string(), Style::new().fg(MUTED)),
+        ]),
+        Line::from(vec![
+            rule.clone(),
+            Span::styled(
+                value.to_string(),
+                Style::new().fg(FG).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            rule,
+            Span::styled(caption.to_string(), Style::new().fg(DIM)),
+        ]),
     ];
-    frame.render_widget(
-        Paragraph::new(lines)
-            .alignment(Alignment::Center)
-            .block(panel(title)),
-        area,
-    );
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 /// A bar of `count` out of `max`, at most `width` cells wide; any non-zero
@@ -100,6 +81,16 @@ fn bar(count: usize, max: usize, width: usize) -> String {
     "█".repeat(cells)
 }
 
+/// A bar with its empty track behind it, so the scale is always visible.
+fn track(count: usize, max: usize, width: usize, color: Color) -> Vec<Span<'static>> {
+    let filled = bar(count, max, width);
+    let rest = width.saturating_sub(filled.chars().count());
+    vec![
+        Span::styled(filled, Style::new().fg(color)),
+        Span::styled("░".repeat(rest), Style::new().fg(DIM)),
+    ]
+}
+
 /// Shortens `text` from the left so it fits `width` columns.
 fn fit_left(text: &str, width: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
@@ -109,6 +100,21 @@ fn fit_left(text: &str, width: usize) -> String {
     let keep = width.saturating_sub(1);
     let tail: String = chars[chars.len() - keep..].iter().collect();
     format!("…{tail}")
+}
+
+/// A path padded to `width`, with the folders dimmed and the file name bright.
+pub(super) fn path_spans(path: &str, width: usize) -> Vec<Span<'static>> {
+    let shown = fit_left(path, width);
+    let pad = width.saturating_sub(shown.chars().count());
+    let (dir, file) = match shown.rfind('/') {
+        Some(at) => shown.split_at(at + 1),
+        None => ("", shown.as_str()),
+    };
+    vec![
+        Span::styled(dir.to_string(), Style::new().fg(MUTED)),
+        Span::styled(file.to_string(), Style::new().fg(FG)),
+        Span::raw(" ".repeat(pad)),
+    ]
 }
 
 fn empty(message: &str) -> Vec<Line<'static>> {
@@ -123,8 +129,8 @@ fn render_urgency(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = panel(t.ov_by_urgency);
     let inner = block.inner(area);
     let counts = app.urgency_counts();
-    let max = counts.iter().map(|(_, count)| *count).max().unwrap_or(0);
-    let width = usize::from(inner.width).saturating_sub(BADGE_WIDTH + 6);
+    let total: usize = counts.iter().map(|(_, count)| *count).sum();
+    let width = usize::from(inner.width).saturating_sub(BADGE_WIDTH + 8);
     for (row, (urgency, _)) in (0u16..).zip(counts.iter()) {
         if row < inner.height {
             app.areas
@@ -133,21 +139,23 @@ fn render_urgency(frame: &mut Frame, area: Rect, app: &mut App) {
         }
     }
 
-    let lines: Vec<Line> = if max == 0 {
+    let lines: Vec<Line> = if total == 0 {
         empty(t.ov_none_to_show)
     } else {
         counts
             .iter()
             .map(|(urgency, count)| {
-                Line::from(vec![
-                    badge(*urgency, app.lang),
-                    Span::raw(" "),
-                    Span::styled(
-                        bar(*count, max, width),
-                        Style::new().fg(urgency_color(*urgency)),
-                    ),
-                    Span::styled(format!(" {count}"), Style::new().fg(FG)),
-                ])
+                let mut spans = vec![badge(*urgency, app.lang), Span::raw(" ")];
+                spans.extend(track(*count, total, width, urgency_color(*urgency)));
+                spans.push(Span::styled(
+                    format!(" {count:>3}"),
+                    Style::new().fg(FG).add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::styled(
+                    format!(" {:>3}%", count * 100 / total),
+                    Style::new().fg(MUTED),
+                ));
+                Line::from(spans)
             })
             .collect()
     };
@@ -166,7 +174,7 @@ fn render_algorithms(frame: &mut Frame, area: Rect, app: &App) {
         .max()
         .unwrap_or(0)
         .min(usize::from(inner.width) / 2);
-    let bar_width = usize::from(inner.width).saturating_sub(name_width + 6);
+    let bar_width = usize::from(inner.width).saturating_sub(name_width + 5);
 
     let lines: Vec<Line> = if ranked.is_empty() {
         empty(t.ov_nothing)
@@ -174,14 +182,13 @@ fn render_algorithms(frame: &mut Frame, area: Rect, app: &App) {
         ranked
             .iter()
             .map(|(name, count)| {
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:<name_width$} ", fit_left(name, name_width)),
-                        Style::new().fg(FG),
-                    ),
-                    Span::styled(bar(*count, max, bar_width), Style::new().fg(ACCENT)),
-                    Span::styled(format!(" {count}"), Style::new().fg(FG)),
-                ])
+                let mut spans = vec![Span::styled(
+                    format!("{:<name_width$} ", fit_left(name, name_width)),
+                    Style::new().fg(FG),
+                )];
+                spans.extend(track(*count, max, bar_width, BAR));
+                spans.push(Span::styled(format!(" {count:>3}"), Style::new().fg(MUTED)));
+                Line::from(spans)
             })
             .collect()
     };
@@ -202,18 +209,10 @@ fn render_files(frame: &mut Frame, area: Rect, app: &App) {
             .iter()
             .map(|(file, count, urgency)| {
                 let shown = file.strip_prefix(Path::new(&app.root)).unwrap_or(file);
-                Line::from(vec![
-                    badge(*urgency, app.lang),
-                    Span::raw(" "),
-                    Span::styled(
-                        format!(
-                            "{:<path_width$}",
-                            fit_left(&shown.display().to_string(), path_width)
-                        ),
-                        Style::new().fg(FG),
-                    ),
-                    Span::styled(format!(" {count:>2}"), Style::new().fg(MUTED)),
-                ])
+                let mut spans = vec![badge(*urgency, app.lang), Span::raw(" ")];
+                spans.extend(path_spans(&shown.display().to_string(), path_width));
+                spans.push(Span::styled(format!(" {count:>3}"), Style::new().fg(MUTED)));
+                Line::from(spans)
             })
             .collect()
     };
@@ -226,7 +225,6 @@ fn render_languages(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(area);
     let languages = app.languages();
     let total: usize = languages.iter().map(|(_, count)| *count).sum();
-    let max = languages.first().map_or(0, |(_, count)| *count);
     let bar_width = usize::from(inner.width).saturating_sub(8 + 12);
 
     let lines: Vec<Line> = if languages.is_empty() {
@@ -236,11 +234,13 @@ fn render_languages(frame: &mut Frame, area: Rect, app: &App) {
             .iter()
             .map(|(label, count)| {
                 let percent = *count as f64 * 100.0 / total as f64;
-                Line::from(vec![
-                    Span::styled(format!("{label:<8}"), Style::new().fg(FG)),
-                    Span::styled(bar(*count, max, bar_width), Style::new().fg(ACCENT_LIGHT)),
-                    Span::styled(format!(" {count} ({percent:.0}%)"), Style::new().fg(MUTED)),
-                ])
+                let mut spans = vec![Span::styled(format!("{label:<8}"), Style::new().fg(FG))];
+                spans.extend(track(*count, total, bar_width, BAR));
+                spans.push(Span::styled(
+                    format!(" {count} ({percent:.0}%)"),
+                    Style::new().fg(MUTED),
+                ));
+                Line::from(spans)
             })
             .collect()
     };

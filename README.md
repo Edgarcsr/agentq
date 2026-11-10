@@ -6,7 +6,7 @@
 
 A proposed tool for analyzing source code, identifying uses of cryptography that may be vulnerable to quantum computing, and recommending post-quantum alternatives suited to the system's context.
 
-> **Status:** this project is in the concept and scope definition stage for an undergraduate final project (TCC, in Brazil). Source scanning and cryptography detection for JavaScript/TypeScript are implemented (see [Current prototype](#current-prototype)); the remaining features described below are planned.
+> **Status:** this project is in the concept and scope definition stage for an undergraduate final project (TCC, in Brazil). Source scanning and cryptography detection for JavaScript/TypeScript are implemented (see [Current prototype](#current-prototype)); the remaining features described below are planned. The draft of the thesis, in Portuguese, is in [`docs/tcc.md`](docs/tcc.md): research question, related tools, evaluation and open gaps.
 
 # Motivation
 
@@ -26,8 +26,8 @@ The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)*
 
 1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages.
 2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
-3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from other uses in the same file, and the confidence of such findings drops to `medium`.
-4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml)) that records the quantum attack (Shor or Grover), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them.
+3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
+4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
 5. **Report.** Text, JSON, or Markdown, most urgent first.
 
 ### How it works
@@ -47,7 +47,7 @@ flowchart TD
         parse["Parse<br/>tree-sitter: JavaScript, TypeScript or TSX"] --> bind["Bindings<br/>follow require, import, aliases, constants"]
         bind --> rules["Rules per library<br/>node:crypto, Web Crypto, jsonwebtoken, jose,<br/>node-forge, noble, libsodium, ..."]
         rules --> raw["Findings<br/>file, line, algorithm, purpose, key size, confidence"]
-        raw --> infer["Infer purpose<br/>RSA/EC keys: use other findings and hints in the file"]
+        raw --> infer["Infer purpose<br/>RSA/EC keys: the calls that receive the key variable,<br/>else a low-confidence guess from the file"]
     end
 
     infer --> assess["Assess<br/>knowledge base: quantum risk, urgency,<br/>alternatives that fit the purpose"]
@@ -77,7 +77,7 @@ The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) ha
 
 Run `cargo run -- --tui` **without a path** to pick the project in a folder browser (folders with a `package.json` or a `.git` are marked); press `b` at any time to choose another one.
 
-Keys: `L` switch the language, `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
+Keys: `shift+l` switch the language, `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
 
 Example, scanning a test fixture:
 
@@ -112,14 +112,14 @@ The interface is structured like a [Bubble Tea](https://github.com/charmbracelet
 
 ### Language
 
-The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese, all empty give English). In the terminal interface, `L` switches it on the fly.
+The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese, all empty give English). In the terminal interface, `shift+l` switches it on the fly.
 
 ```sh
 cargo run -- samples/node-shop --lang pt-BR
 cargo run -- samples/node-shop --tui --lang pt-BR
 ```
 
-JSON output keeps its field names and machine values (`urgency`, `purpose`, ...) in every language and only translates the prose, with a `language` field saying which. The descriptions of each algorithm come from the knowledge base and are still in English.
+JSON output keeps its field names and machine values (`urgency`, `purpose`, ...) in every language and only translates the prose, with a `language` field saying which. The descriptions of each algorithm come from the knowledge base, which has both languages.
 
 ### Evaluation
 
@@ -127,16 +127,18 @@ JSON output keeps its field names and machine values (`urgency`, `purpose`, ...)
 
 | | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: |
-| agentq | 100.0% | 95.8% | 97.9% |
-| keyword search | 65.2% | 62.5% | 63.8% |
+| agentq | 100.0% | 95.9% | 97.9% |
+| keyword search | 67.4% | 63.3% | 65.3% |
 
 The corpus was written by the authors of the analyzer, so these numbers show regressions and the gap to a naive search, not performance on unseen code. Validation on real repositories is still to do.
+
+agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap is scope (TLS configuration, SSH keys, dependency manifests). On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
 
 ### Known limitations
 
 - Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
 - Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
-- Purpose inference works per file, so unrelated keys in one file can influence each other.
+- Purpose inference follows the key by variable name within one file; it does not follow it through function parameters, object fields or other files.
 - Only JavaScript and TypeScript are analyzed.
 
 ## Next steps
@@ -149,6 +151,7 @@ The corpus was written by the authors of the analyzer, so these numbers show reg
 - [x] Produce the report (text, JSON, Markdown).
 - [x] Evaluate the prototype on an annotated synthetic corpus.
 - [ ] Evaluate it on real open-source Node repositories, with manual validation.
+- [ ] Compare it with existing tools on real repositories (first runs against qScan in [`eval/external`](eval/external)).
 - [ ] Add analyzers for Python, Java, and Go.
 - [ ] Document the results, limitations, and opportunities for future development.
 

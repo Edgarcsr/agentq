@@ -2,6 +2,7 @@
 
 use super::app::{App, Tab};
 use super::browser::{Browser, fixture::TempTree};
+use super::logo::Logo;
 use super::ui;
 use super::{Cmd, Msg, Screen, Tui, perform};
 use crate::analysis::Analysis;
@@ -19,6 +20,7 @@ fn app_with(assessments: Vec<crate::assess::Assessment>) -> App {
     let analysis = Analysis {
         files: fixtures::files(),
         assessments,
+        unassessed: vec![],
     };
     let mut app = App::new(
         "project".into(),
@@ -71,7 +73,7 @@ fn wide_layout_shows_header_list_details_and_footer() {
         "3 use(s)",
         "2 broken",
         "hide safe: off",
-        "quit",
+        "back",
     ] {
         assert!(
             screen.contains(expected),
@@ -146,7 +148,7 @@ fn help_overlay_lists_the_keys() {
         "Help",
         "select a finding",
         "scan the directory again",
-        "quit",
+        "back to the menu",
     ] {
         assert!(
             screen.contains(expected),
@@ -188,6 +190,7 @@ fn rescan_message_appears_in_the_footer() {
     app.replace(Analysis {
         files: fixtures::files(),
         assessments: fixtures::assessments(),
+        unassessed: vec![],
     });
     let screen = draw(&mut app, 140, 24);
     assert!(
@@ -301,13 +304,13 @@ fn clicking_a_finding_selects_it() {
     let mut app = app();
     draw(&mut app, 120, 32);
     let list = app.areas.list;
-    // Each finding takes two rows: the second row of the third one is still the third.
-    click(&mut app, list.x + 2, list.y + 5);
+    // Each finding takes one row.
+    click(&mut app, list.x + 2, list.y + 2);
     assert_eq!(app.selected, 2);
     click(&mut app, list.x + 2, list.y);
     assert_eq!(app.selected, 0);
     // Below the last finding nothing changes.
-    click(&mut app, list.x + 2, list.y + 8);
+    click(&mut app, list.x + 2, list.y + 5);
     assert_eq!(app.selected, 0);
     // Neither does a click outside the list.
     click(&mut app, 0, 0);
@@ -412,7 +415,9 @@ fn settle(tui: &mut Tui) {
             break;
         }
         for command in commands {
-            let Cmd::Scan { id, path, lang } = command;
+            let Cmd::Scan { id, path, lang } = command else {
+                continue;
+            };
             let analysis = analyze_directory(&path, lang);
             tui.update(Msg::Scanned {
                 id,
@@ -490,12 +495,6 @@ fn a_path_skips_the_browser() {
 }
 
 #[test]
-fn without_a_path_it_starts_on_the_browser() {
-    let tui = Tui::start(None, false, Confidence::Low, Lang::En);
-    assert!(matches!(tui.screen, Screen::Browse(_)));
-}
-
-#[test]
 fn choosing_a_folder_shows_its_results_and_b_goes_back() {
     let samples = sample().parent().unwrap().to_path_buf();
     let mut tui = Tui::start(None, true, Confidence::Medium, Lang::En);
@@ -528,12 +527,15 @@ fn choosing_a_folder_shows_its_results_and_b_goes_back() {
 }
 
 #[test]
-fn quitting_works_from_both_screens() {
+fn q_steps_back_and_only_the_menu_quits() {
     let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     press(&mut tui, KeyCode::Char('q'));
     assert!(tui.should_quit());
 
     let mut tui = started(Some(&sample()), false, Confidence::Low, Lang::En);
+    press(&mut tui, KeyCode::Char('q'));
+    assert!(!tui.should_quit());
+    assert!(matches!(tui.screen, Screen::Menu(_)));
     press(&mut tui, KeyCode::Char('q'));
     assert!(tui.should_quit());
 }
@@ -583,6 +585,7 @@ fn app_in(lang: Lang) -> App {
                 crate::knowledge::KnowledgeBase::embedded(),
                 lang,
             ),
+            unassessed: vec![],
         },
         "2026-11".into(),
         false,
@@ -611,14 +614,13 @@ fn the_findings_page_in_portuguese() {
         "Biblioteca",
         "Confiança",
         "Alta",
-        "Local",
         "Código",
         "Por que importa",
         "Substituir por",
         "3 uso(s)",
         "2 quebrado(s)",
         "ocultar seguros: desativado · confiança mínima: Baixa",
-        "sair",
+        "voltar",
     ] {
         assert!(
             screen.contains(expected),
@@ -638,7 +640,7 @@ fn the_overview_in_portuguese() {
         "quebrados por Shor",
         "Enfraquecidos",
         "Já seguros",
-        "sem necessidade de migração",
+        "nada a migrar",
         "Por urgência",
         "Algoritmos mais usados",
         "Revisar primeiro",
@@ -743,6 +745,7 @@ fn the_rescan_status_is_translated() {
     app.replace(Analysis {
         files: fixtures::files(),
         assessments: fixtures::assessments(),
+        unassessed: vec![],
     });
     // It is visible even on a terminal too narrow for the whole summary.
     assert!(draw(&mut app, 80, 24).contains("Análise refeita: 3 uso(s) em 4 arquivo(s)"));
@@ -760,11 +763,15 @@ fn a_path_shows_a_loading_screen_until_the_scan_arrives() {
 
     let commands = tui.drain_commands();
     assert_eq!(commands.len(), 1);
-    let Cmd::Scan { path, .. } = &commands[0];
+    let Cmd::Scan { path, .. } = &commands[0] else {
+        unreachable!()
+    };
     assert_eq!(path, &sample());
 
     // The scan finishes: the results replace the loading screen.
-    let Cmd::Scan { id, path, lang } = commands.into_iter().next().unwrap();
+    let Some(Cmd::Scan { id, path, lang }) = commands.into_iter().next() else {
+        unreachable!()
+    };
     let analysis = analyze_directory(&path, lang);
     tui.update(Msg::Scanned {
         id,
@@ -780,7 +787,10 @@ fn a_path_shows_a_loading_screen_until_the_scan_arrives() {
 fn ticks_move_the_spinner() {
     let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
     let first = draw_tui(&mut tui, 100, 20);
-    tui.update(Msg::Tick);
+    // The spinner changes every third tick; the text shimmers on each one.
+    for _ in 0..3 {
+        tui.update(Msg::Tick);
+    }
     let second = draw_tui(&mut tui, 100, 20);
     assert!(first.contains("⠋") && !first.contains("⠙"));
     assert!(second.contains("⠙") && !second.contains("⠋"));
@@ -789,7 +799,9 @@ fn ticks_move_the_spinner() {
 #[test]
 fn escape_cancels_the_loading_and_a_late_result_is_ignored() {
     let mut tui = Tui::start(Some(&sample()), false, Confidence::Low, Lang::En);
-    let Cmd::Scan { id, path, lang } = tui.drain_commands().into_iter().next().unwrap();
+    let Some(Cmd::Scan { id, path, lang }) = tui.drain_commands().into_iter().next() else {
+        unreachable!()
+    };
 
     tui.update(Msg::Key(KeyCode::Esc));
     assert!(!tui.is_busy());
@@ -897,6 +909,7 @@ fn a_scan_runs_on_a_background_thread_and_reports_back() {
 fn the_busy_state_follows_the_scans() {
     let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
     assert!(!tui.is_busy());
+    tui.update(Msg::Key(KeyCode::Enter));
     let Screen::Browse(browser) = &mut tui.screen else {
         unreachable!()
     };
@@ -907,4 +920,195 @@ fn the_busy_state_follows_the_scans() {
     assert!(matches!(tui.screen, Screen::Loading(_)));
     settle(&mut tui);
     assert!(!tui.is_busy());
+}
+
+fn menu_tui() -> Tui {
+    Tui::start(None, false, Confidence::Low, Lang::En)
+}
+
+#[test]
+fn without_a_path_it_starts_on_the_main_menu() {
+    let mut tui = menu_tui();
+    let screen = draw_tui(&mut tui, 100, 24);
+    for expected in [
+        "Choose a project",
+        "Analyze this folder",
+        "Settings",
+        "Quit",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing `{expected}` in:\n{screen}"
+        );
+    }
+}
+
+#[test]
+fn the_menu_opens_the_browser_and_the_browser_goes_back() {
+    let mut tui = menu_tui();
+    draw_tui(&mut tui, 100, 24);
+    tui.update(Msg::Key(KeyCode::Enter));
+    assert!(matches!(tui.screen, Screen::Browse(_)));
+    // Leaving the browser returns to the menu instead of quitting.
+    tui.update(Msg::Key(KeyCode::Esc));
+    assert!(matches!(tui.screen, Screen::Menu(_)));
+    assert!(!tui.should_quit());
+}
+
+#[test]
+fn the_menu_switches_language_and_quits() {
+    let mut tui = menu_tui();
+    tui.update(Msg::Key(KeyCode::Char('L')));
+    assert!(draw_tui(&mut tui, 100, 24).contains("Escolher um projeto"));
+    tui.update(Msg::Key(KeyCode::Char('q')));
+    assert!(tui.should_quit());
+}
+
+#[test]
+fn settings_change_the_language_and_the_logo_and_ask_to_be_saved() {
+    let mut tui = menu_tui();
+    draw_tui(&mut tui, 100, 24);
+    // Third item of the menu.
+    tui.update(Msg::Key(KeyCode::Char('s')));
+    assert!(matches!(tui.screen, Screen::Settings(_)));
+    let screen = draw_tui(&mut tui, 100, 24);
+    for expected in ["Language", "English", "Logo", "Planet"] {
+        assert!(screen.contains(expected), "missing `{expected}`:\n{screen}");
+    }
+
+    // Language: switches and asks to be remembered.
+    tui.update(Msg::Key(KeyCode::Enter));
+    assert!(draw_tui(&mut tui, 100, 24).contains("Idioma"));
+    assert_eq!(
+        tui.drain_commands(),
+        vec![Cmd::Save {
+            lang: Lang::PtBr,
+            logo: Logo::Planet
+        }]
+    );
+
+    // Logo: the next ones, then back around to the first.
+    tui.update(Msg::Key(KeyCode::Down));
+    tui.update(Msg::Key(KeyCode::Right));
+    tui.drain_commands();
+    tui.update(Msg::Key(KeyCode::Right));
+    assert!(draw_tui(&mut tui, 100, 24).contains("Chave"));
+    assert_eq!(
+        tui.drain_commands(),
+        vec![Cmd::Save {
+            lang: Lang::PtBr,
+            logo: Logo::Key
+        }]
+    );
+    tui.update(Msg::Key(KeyCode::Right));
+    assert_eq!(tui.logo, Logo::Planet);
+
+    // Back to the menu, which now shows the chosen logo.
+    tui.update(Msg::Key(KeyCode::Esc));
+    let Screen::Menu(menu) = &tui.screen else {
+        panic!("not on the menu")
+    };
+    assert_eq!(menu.logo, Logo::Planet);
+}
+
+#[test]
+fn the_language_key_asks_to_be_saved_from_any_screen() {
+    let mut tui = menu_tui();
+    tui.update(Msg::Key(KeyCode::Char('L')));
+    assert_eq!(
+        tui.drain_commands(),
+        vec![Cmd::Save {
+            lang: Lang::PtBr,
+            logo: Logo::Planet
+        }]
+    );
+}
+
+#[test]
+fn the_logo_can_be_turned_with_the_mouse_on_the_menu() {
+    let mut tui = menu_tui();
+    tui.set_logo(Logo::Lock);
+    draw_tui(&mut tui, 100, 24);
+    let Screen::Menu(menu) = &tui.screen else {
+        unreachable!()
+    };
+    let at = menu.logo_area;
+    let mouse = |tui: &mut Tui, kind, column| {
+        tui.update(Msg::Mouse {
+            kind,
+            column,
+            row: at.y + 3,
+        })
+    };
+    mouse(&mut tui, MouseEventKind::Down(MouseButton::Left), at.x + 20);
+    mouse(&mut tui, MouseEventKind::Drag(MouseButton::Left), at.x + 30);
+    mouse(&mut tui, MouseEventKind::Up(MouseButton::Left), at.x + 30);
+    let Screen::Menu(menu) = &tui.screen else {
+        unreachable!()
+    };
+    assert!(menu.spin.turn.0 > 0.5, "{:?}", menu.spin.turn);
+}
+
+#[test]
+fn the_menu_can_be_clicked() {
+    let mut tui = menu_tui();
+    draw_tui(&mut tui, 100, 24);
+    let Screen::Menu(menu) = &tui.screen else {
+        unreachable!()
+    };
+    let list = menu.list_area;
+    let click = |tui: &mut Tui, row: u16| {
+        tui.update(Msg::Mouse {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: list.x + 3,
+            row,
+        })
+    };
+    // The first click selects the last item, the second one runs it.
+    click(&mut tui, list.y + 3);
+    assert!(!tui.should_quit());
+    click(&mut tui, list.y + 3);
+    assert!(tui.should_quit());
+}
+
+#[test]
+fn results_go_back_to_the_menu_with_m() {
+    let mut tui = menu_tui();
+    tui.screen = Screen::Results(Box::new(app()));
+    tui.update(Msg::Key(KeyCode::Char('m')));
+    assert!(matches!(tui.screen, Screen::Menu(_)));
+}
+
+#[test]
+fn the_browser_colors_node_projects_and_adds_icons_with_a_nerd_font() {
+    let tree = TempTree::new();
+    let mut tui = Tui::start(None, false, Confidence::Low, Lang::En);
+    tui.screen = Screen::Browse(Browser::new(tree.0.clone()));
+    let mut terminal = Terminal::new(TestBackend::new(110, 22)).unwrap();
+
+    let colors_of = |terminal: &Terminal<TestBackend>, text: &str| {
+        let buffer = terminal.backend().buffer();
+        let screen = screen(buffer);
+        let row = screen
+            .lines()
+            .position(|l| l.contains(text))
+            .unwrap_or_else(|| panic!("no `{text}` in:\n{screen}"));
+        let column = screen.lines().nth(row).unwrap().find(text).unwrap();
+        let column = screen.lines().nth(row).unwrap()[..column].chars().count();
+        buffer[(column as u16, row as u16)].style().fg
+    };
+
+    // The label is Node green with or without the font; the icon needs it.
+    ui::set_nerd_font(false);
+    terminal.draw(|frame| tui.render(frame)).unwrap();
+    assert_eq!(colors_of(&terminal, "Node project"), Some(ui::NODE));
+    assert!(!screen(terminal.backend().buffer()).contains('\u{e718}'));
+
+    ui::set_nerd_font(true);
+    terminal.draw(|frame| tui.render(frame)).unwrap();
+    let with_icons = screen(terminal.backend().buffer());
+    ui::set_nerd_font(false);
+    assert!(with_icons.contains('\u{e718}'), "{with_icons}");
+    assert!(with_icons.contains('\u{e702}'), "{with_icons}");
+    assert!(with_icons.contains('\u{f07b}'), "{with_icons}");
 }

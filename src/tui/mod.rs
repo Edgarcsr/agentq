@@ -16,17 +16,24 @@
 mod app;
 mod browser;
 mod loading;
+mod logo;
+mod menu;
 mod overview;
+mod settings;
 mod ui;
 
 pub use app::{App, Command, Counts, Tab};
 pub use browser::Browser;
+pub use ui::set_nerd_font;
 
 use crate::analysis::{Analysis, analyze_directory};
+use crate::config::Settings;
 use crate::finding::Confidence;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
 use browser::Action;
+use logo::Logo;
+use menu::{Action as MenuAction, Menu};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::crossterm::event::{
@@ -34,11 +41,12 @@ use ratatui::crossterm::event::{
     MouseEventKind,
 };
 use ratatui::crossterm::execute;
+use settings::{Action as SettingsAction, SettingsScreen};
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Something that happened.
 pub enum Msg {
@@ -65,12 +73,18 @@ pub enum Msg {
 /// Work the runtime must do for the interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cmd {
+    /// Remember the language and the logo for the next run.
+    Save { lang: Lang, logo: Logo },
     /// Analyze a folder in the background and report back with [`Msg::Scanned`].
     Scan { id: u64, path: PathBuf, lang: Lang },
 }
 
 /// The screen being shown.
 enum Screen {
+    /// The main menu.
+    Menu(Menu),
+    /// The language and the logo.
+    Settings(SettingsScreen),
     /// Choosing the project to analyze.
     Browse(Browser),
     /// Waiting for the analysis of a folder.
@@ -85,6 +99,7 @@ pub struct Tui {
     hide_safe: bool,
     min_confidence: Confidence,
     lang: Lang,
+    logo: Logo,
     quit: bool,
     spinner: usize,
     next_scan: u64,
@@ -103,12 +118,11 @@ impl Tui {
         lang: Lang,
     ) -> Tui {
         let mut tui = Tui {
-            screen: Screen::Browse(Browser::new(
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            )),
+            screen: Screen::Menu(Menu::new(Logo::default())),
             hide_safe,
             min_confidence,
             lang,
+            logo: Logo::default(),
             quit: false,
             spinner: 0,
             next_scan: 0,
@@ -121,6 +135,22 @@ impl Tui {
         tui
     }
 
+    /// Chooses the logo, on the menu too if it is up.
+    pub fn set_logo(&mut self, logo: Logo) {
+        self.logo = logo;
+        if let Screen::Menu(menu) = &mut self.screen {
+            menu.logo = logo;
+        }
+    }
+
+    /// Asks the runtime to remember the language and the logo.
+    fn save(&mut self) {
+        self.outbox.push(Cmd::Save {
+            lang: self.lang,
+            logo: self.logo,
+        });
+    }
+
     pub fn should_quit(&self) -> bool {
         self.quit
     }
@@ -128,6 +158,11 @@ impl Tui {
     /// Whether something is running in the background.
     pub fn is_busy(&self) -> bool {
         self.pending.is_some()
+    }
+
+    /// Whether the screen moves by itself and needs frequent redraws.
+    pub fn is_animated(&self) -> bool {
+        matches!(self.screen, Screen::Menu(_) | Screen::Settings(_)) || self.is_busy()
     }
 
     /// Takes the commands the last updates asked for.
@@ -141,7 +176,14 @@ impl Tui {
             Msg::Key(code) => self.on_key(code),
             Msg::Mouse { kind, column, row } => self.on_mouse(kind, column, row),
             Msg::Quit => self.quit = true,
-            Msg::Tick => self.spinner = self.spinner.wrapping_add(1),
+            Msg::Tick => {
+                self.spinner = self.spinner.wrapping_add(1);
+                match &mut self.screen {
+                    Screen::Menu(menu) => menu.tick(),
+                    Screen::Settings(settings) => settings.tick(),
+                    _ => {}
+                }
+            }
             Msg::Scanned {
                 id,
                 path,
@@ -207,19 +249,75 @@ impl Tui {
         self.screen = Screen::Browse(browser);
     }
 
+    /// Goes back to the main menu, dropping whatever was running.
+    fn open_menu(&mut self) {
+        self.pending = None;
+        self.screen = Screen::Menu(Menu::new(self.logo));
+    }
+
+    fn here() -> PathBuf {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    }
+
+    fn on_menu(&mut self, action: Option<MenuAction>) {
+        match action {
+            Some(MenuAction::Browse) => self.screen = Screen::Browse(Browser::new(Tui::here())),
+            Some(MenuAction::AnalyzeHere) => self.scan(Tui::here(), false),
+            Some(MenuAction::Settings) => self.screen = Screen::Settings(SettingsScreen::new()),
+            Some(MenuAction::SwitchLanguage) => self.lang = self.lang.other(),
+            Some(MenuAction::Quit) => self.quit = true,
+            None => {}
+        }
+    }
+
+    /// Applies what the settings screen asked for and remembers it.
+    fn on_settings(&mut self, action: Option<SettingsAction>) {
+        match action {
+            Some(SettingsAction::Back) => self.open_menu(),
+            Some(SettingsAction::Language) => self.lang = self.lang.other(),
+            Some(SettingsAction::Logo { back }) => {
+                self.logo = self.logo.step(back);
+                self.save();
+            }
+            None => {}
+        }
+    }
+
+    /// Any language switch, from any screen, is remembered.
     fn on_key(&mut self, code: KeyCode) {
+        let before = self.lang;
+        self.handle_key(code);
+        let settings_changed_it = self
+            .outbox
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Save { .. }));
+        if self.lang != before && !settings_changed_it {
+            self.save();
+        }
+    }
+
+    fn handle_key(&mut self, code: KeyCode) {
         match &mut self.screen {
+            Screen::Settings(settings) => {
+                let action = settings.handle_key(code);
+                self.on_settings(action);
+            }
+            Screen::Menu(menu) => {
+                let action = menu.handle_key(code);
+                self.on_menu(action);
+            }
             Screen::Browse(_) if code == KeyCode::Char('L') => self.lang = self.lang.other(),
             Screen::Browse(browser) => match browser.handle_key(code) {
                 Some(Action::Analyze(path)) => self.scan(path, false),
-                Some(Action::Quit) => self.quit = true,
+                Some(Action::Back) => self.open_menu(),
                 None => {}
             },
             Screen::Loading(path) => {
                 let path = path.clone();
                 match code {
                     KeyCode::Esc => self.open_browser(&path),
-                    KeyCode::Char('q') => self.quit = true,
+                    KeyCode::Char('m') => self.open_menu(),
+                    KeyCode::Char('q') => self.open_menu(),
                     KeyCode::Char('L') => self.lang = self.lang.other(),
                     _ => {}
                 }
@@ -236,6 +334,7 @@ impl Tui {
                 match command {
                     Some(Command::Rescan) if !app.scanning => self.scan(root, true),
                     Some(Command::OpenBrowser) => self.open_browser(&root),
+                    Some(Command::OpenMenu) => self.open_menu(),
                     _ => {}
                 }
             }
@@ -244,9 +343,17 @@ impl Tui {
 
     fn on_mouse(&mut self, kind: MouseEventKind, column: u16, row: u16) {
         match &mut self.screen {
+            Screen::Settings(settings) => {
+                let action = settings.handle_mouse(kind, column, row, self.logo);
+                self.on_settings(action);
+            }
+            Screen::Menu(menu) => {
+                let action = menu.handle_mouse(kind, column, row);
+                self.on_menu(action);
+            }
             Screen::Browse(browser) => match browser.handle_mouse(kind, column, row) {
                 Some(Action::Analyze(path)) => self.scan(path, false),
-                Some(Action::Quit) => self.quit = true,
+                Some(Action::Back) => self.open_menu(),
                 None => {}
             },
             Screen::Loading(_) => {}
@@ -256,6 +363,11 @@ impl Tui {
 
     pub fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
+            Screen::Menu(menu) => {
+                let here = Tui::here().display().to_string();
+                menu::render(frame, menu, self.lang, &here)
+            }
+            Screen::Settings(settings) => settings::render(frame, settings, self.lang, self.logo),
             Screen::Browse(browser) => browser::render(frame, browser, self.lang),
             Screen::Loading(path) => loading::render(frame, path, self.spinner, self.lang),
             Screen::Results(app) => {
@@ -270,6 +382,13 @@ impl Tui {
 /// through `tx` as a message.
 fn perform(cmd: Cmd, tx: &Sender<Msg>) {
     match cmd {
+        Cmd::Save { lang, logo } => {
+            let mut settings = Settings::load();
+            settings.language = Some(lang.code().to_string());
+            settings.logo = Some(logo.name().to_string());
+            // Not being able to save is not worth interrupting the user for.
+            let _ = settings.save();
+        }
         Cmd::Scan { id, path, lang } => {
             let tx = tx.clone();
             thread::spawn(move || {
@@ -297,11 +416,10 @@ pub fn run(
     lang: Lang,
 ) -> io::Result<()> {
     if !io::stdout().is_terminal() {
-        return Err(io::Error::other(
-            "the interactive interface needs a terminal; use --format for piped output",
-        ));
+        return Err(io::Error::other(lang.t().needs_terminal));
     }
     let mut tui = Tui::start(start, hide_safe, min_confidence, lang);
+    tui.set_logo(Logo::resolve(Settings::load().logo.as_deref()));
     let mut terminal = ratatui::try_init()?;
     // Turn mouse reporting off again even if the program panics.
     let previous_hook = std::panic::take_hook();
@@ -320,36 +438,63 @@ pub fn run(
 const BUSY_POLL: Duration = Duration::from_millis(80);
 /// How long to wait for input when nothing runs.
 const IDLE_POLL: Duration = Duration::from_millis(250);
+/// Time between frames of an animated screen (about 30 per second).
+const FRAME: Duration = Duration::from_millis(33);
 
 fn event_loop(terminal: &mut DefaultTerminal, tui: &mut Tui) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
+    let mut last_frame = Instant::now();
     while !tui.should_quit() {
         for cmd in tui.drain_commands() {
             perform(cmd, &tx);
         }
         terminal.draw(|frame| tui.render(frame))?;
 
-        let wait = if tui.is_busy() { BUSY_POLL } else { IDLE_POLL };
-        if event::poll(wait)? {
-            // Resize and other events fall through and just trigger a redraw.
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
-                        && key.code == KeyCode::Char('c');
-                    tui.update(if ctrl_c {
-                        Msg::Quit
-                    } else {
-                        Msg::Key(key.code)
-                    });
-                }
-                Event::Mouse(mouse) => tui.update(Msg::Mouse {
-                    kind: mouse.kind,
-                    column: mouse.column,
-                    row: mouse.row,
-                }),
-                _ => {}
-            }
+        let animated = tui.is_animated();
+        let wait = if animated {
+            FRAME.saturating_sub(last_frame.elapsed())
         } else if tui.is_busy() {
+            BUSY_POLL
+        } else {
+            IDLE_POLL
+        };
+        let mut had_input = false;
+        if event::poll(wait)? {
+            had_input = true;
+            // Take everything that is waiting before drawing again: a moving
+            // mouse sends hundreds of events a second and each one must not
+            // cost a redraw.
+            loop {
+                // Resize and other events fall through and just trigger a redraw.
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('c');
+                        tui.update(if ctrl_c {
+                            Msg::Quit
+                        } else {
+                            Msg::Key(key.code)
+                        });
+                    }
+                    Event::Mouse(mouse) => tui.update(Msg::Mouse {
+                        kind: mouse.kind,
+                        column: mouse.column,
+                        row: mouse.row,
+                    }),
+                    _ => {}
+                }
+                if !event::poll(Duration::ZERO)? {
+                    break;
+                }
+            }
+        }
+        if animated {
+            // The animation follows the clock, not the input.
+            if last_frame.elapsed() >= FRAME {
+                tui.update(Msg::Tick);
+                last_frame = Instant::now();
+            }
+        } else if !had_input && tui.is_busy() {
             tui.update(Msg::Tick);
         }
         while let Ok(msg) = rx.try_recv() {
