@@ -18,9 +18,12 @@ fn detection(algorithm: &'static str, purpose: Purpose) -> Detection {
 }
 
 fn hash(name: &str) -> Vec<Detection> {
-    let name = name.strip_prefix("Hmac").unwrap_or(name);
+    let (name, purpose) = match name.strip_prefix("Hmac") {
+        Some(rest) => (rest, Purpose::Mac),
+        None => (name, Purpose::Hash),
+    };
     names::hash(name)
-        .map(|id| detection(id, Purpose::Hash))
+        .map(|id| detection(id, purpose))
         .into_iter()
         .collect()
 }
@@ -30,11 +33,13 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
     let path: Vec<&str> = site.path().iter().map(String::as_str).collect();
     match (module, path.as_slice()) {
         // import SHA256 from 'crypto-js/sha256'; SHA256(message)
-        (module, []) if module.starts_with("crypto-js/") => hash(
-            module
-                .trim_start_matches("crypto-js/")
-                .trim_start_matches("hmac-"),
-        ),
+        (module, []) if module.starts_with("crypto-js/") => {
+            let name = module.trim_start_matches("crypto-js/");
+            match name.strip_prefix("hmac-") {
+                Some(rest) => hash(&format!("Hmac{rest}")),
+                None => hash(name),
+            }
+        }
         // CryptoJS.SHA256(message)
         ("crypto-js", [function]) => hash(function),
         // CryptoJS.TripleDES.encrypt(message, key)

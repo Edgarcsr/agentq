@@ -3,6 +3,11 @@
 #
 # Sources: NIST FIPS 203/204/205, NIST IR 8547 (ipd), NIST SP 800-131A,
 # NSA CNSA 2.0. Review whenever those documents change.
+#
+# `attack` says what threatens the algorithm: `shor` and `grover` are quantum
+# attacks; `classical` marks algorithms that are weak without any quantum
+# computer (practical attacks, or keys and outputs that are too short). Those
+# are reported so the inventory is complete, but they are not quantum findings.
 
 version = "2026-11"
 
@@ -20,6 +25,8 @@ purposes = ["key_exchange", "signature", "encryption"]
 pqc_alternatives = ["ml-kem", "ml-dsa", "slh-dsa"]
 rationale = "Security rests on integer factoring, which Shor's algorithm solves in polynomial time on a large enough quantum computer. Larger keys do not help."
 notes = "RSA-2048 signatures are 256 bytes; ML-DSA-65 signatures are 3309 bytes and public keys 1952 bytes. For encryption or key transport use ML-KEM, for signatures ML-DSA or SLH-DSA."
+rationale_pt = "A segurança depende da fatoração de inteiros, que o algoritmo de Shor resolve em tempo polinomial num computador quântico grande o bastante. Chaves maiores não ajudam."
+notes_pt = "Assinaturas RSA-2048 têm 256 bytes; as do ML-DSA-65 têm 3309 bytes e as chaves públicas 1952 bytes. Para cifragem ou transporte de chaves use ML-KEM; para assinaturas, ML-DSA ou SLH-DSA."
 references = ["NIST IR 8547", "NIST FIPS 203", "NIST FIPS 204", "Gidney and Ekera 2021"]
 
 [[algorithm]]
@@ -32,6 +39,8 @@ purposes = ["key_exchange"]
 pqc_alternatives = ["ml-kem"]
 rationale = "Security rests on the discrete logarithm problem in a finite field, which Shor's algorithm solves in polynomial time."
 notes = "Recorded traffic can be decrypted later (harvest now, decrypt later), so key exchange is the most urgent use to migrate. Prefer a hybrid with ML-KEM during the transition."
+rationale_pt = "A segurança depende do problema do logaritmo discreto em corpo finito, que o algoritmo de Shor resolve em tempo polinomial."
+notes_pt = "O tráfego gravado pode ser decifrado depois (colher agora, decifrar depois), então a troca de chaves é o uso mais urgente de migrar. Prefira um esquema híbrido com ML-KEM durante a transição."
 references = ["NIST IR 8547", "NIST FIPS 203"]
 
 [[algorithm]]
@@ -44,6 +53,8 @@ purposes = ["key_exchange"]
 pqc_alternatives = ["ml-kem"]
 rationale = "Security rests on the elliptic curve discrete logarithm problem, which Shor's algorithm solves in polynomial time."
 notes = "Harvest-now-decrypt-later applies. A P-256 public key is 65 bytes; an ML-KEM-768 public key is 1184 bytes and its ciphertext 1088 bytes."
+rationale_pt = "A segurança depende do problema do logaritmo discreto em curvas elípticas, que o algoritmo de Shor resolve em tempo polinomial."
+notes_pt = "Vale o risco de colher agora, decifrar depois. Uma chave pública P-256 tem 65 bytes; uma chave pública ML-KEM-768 tem 1184 bytes e o texto cifrado 1088 bytes."
 references = ["NIST IR 8547", "NIST FIPS 203"]
 
 [[algorithm]]
@@ -56,6 +67,8 @@ purposes = ["key_exchange"]
 pqc_alternatives = ["ml-kem"]
 rationale = "Curve25519 is an elliptic curve, so its discrete logarithm problem falls to Shor's algorithm."
 notes = "Hybrid X25519 plus ML-KEM-768 is already deployed in TLS and is the recommended transition path. X25519 public keys are 32 bytes."
+rationale_pt = "A Curve25519 é uma curva elíptica, então o logaritmo discreto dela cai diante do algoritmo de Shor."
+notes_pt = "O híbrido X25519 com ML-KEM-768 já é usado em TLS e é o caminho de transição recomendado. Chaves públicas X25519 têm 32 bytes."
 references = ["NIST IR 8547", "NIST FIPS 203"]
 
 [[algorithm]]
@@ -68,6 +81,8 @@ purposes = ["signature"]
 pqc_alternatives = ["ml-dsa", "slh-dsa"]
 rationale = "Security rests on the discrete logarithm problem, which Shor's algorithm solves in polynomial time."
 notes = "DSA is also no longer approved for generating new signatures (FIPS 186-5), so migrate regardless of the quantum timeline."
+rationale_pt = "A segurança depende do problema do logaritmo discreto, que o algoritmo de Shor resolve em tempo polinomial."
+notes_pt = "O DSA também não é mais aprovado para gerar novas assinaturas (FIPS 186-5); migre independentemente do cronograma quântico."
 references = ["NIST IR 8547", "NIST FIPS 186-5", "NIST FIPS 204"]
 
 [[algorithm]]
@@ -80,6 +95,8 @@ purposes = ["signature"]
 pqc_alternatives = ["ml-dsa", "slh-dsa"]
 rationale = "Security rests on the elliptic curve discrete logarithm problem. A quantum attacker can forge signatures once able to recover private keys."
 notes = "Signatures are about 64 bytes for P-256 versus 2420 to 4627 bytes for ML-DSA. Long-lived signatures (firmware, certificates) should migrate first."
+rationale_pt = "A segurança depende do problema do logaritmo discreto em curvas elípticas. Um atacante quântico pode forjar assinaturas assim que conseguir recuperar chaves privadas."
+notes_pt = "As assinaturas têm cerca de 64 bytes no P-256, contra 2420 a 4627 bytes no ML-DSA. Assinaturas de longa duração (firmware, certificados) devem migrar primeiro."
 references = ["NIST IR 8547", "NIST FIPS 204", "NIST FIPS 205"]
 
 [[algorithm]]
@@ -92,10 +109,41 @@ purposes = ["signature"]
 pqc_alternatives = ["ml-dsa", "slh-dsa"]
 rationale = "Edwards-curve signatures rely on the elliptic curve discrete logarithm problem, which Shor's algorithm solves."
 notes = "Ed25519 signatures are 64 bytes and public keys 32 bytes; ML-DSA-44 uses 2420-byte signatures and 1312-byte public keys."
+rationale_pt = "Assinaturas em curvas de Edwards dependem do logaritmo discreto em curvas elípticas, que o algoritmo de Shor resolve."
+notes_pt = "Assinaturas Ed25519 têm 64 bytes e chaves públicas 32 bytes; o ML-DSA-44 usa assinaturas de 2420 bytes e chaves públicas de 1312 bytes."
 references = ["NIST IR 8547", "NIST FIPS 204"]
 
+[[algorithm]]
+id = "ed448"
+name = "Ed448"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["signature"]
+pqc_alternatives = ["ml-dsa", "slh-dsa"]
+rationale = "Edwards-curve signatures rely on the elliptic curve discrete logarithm problem, which Shor's algorithm solves. A larger curve does not help."
+notes = "Ed448 signatures are 114 bytes and public keys 57 bytes; ML-DSA-65 uses 3309-byte signatures and 1952-byte public keys."
+rationale_pt = "Assinaturas em curvas de Edwards dependem do logaritmo discreto em curvas elípticas, que o algoritmo de Shor resolve. Uma curva maior não ajuda."
+notes_pt = "Assinaturas Ed448 têm 114 bytes e chaves públicas 57 bytes; o ML-DSA-65 usa assinaturas de 3309 bytes e chaves públicas de 1952 bytes."
+references = ["NIST IR 8547", "NIST FIPS 204", "RFC 8032"]
+
+[[algorithm]]
+id = "x448"
+name = "X448"
+family = "public_key"
+risk = "broken"
+attack = "shor"
+purposes = ["key_exchange"]
+pqc_alternatives = ["ml-kem"]
+rationale = "Curve448 is an elliptic curve, so its discrete logarithm problem falls to Shor's algorithm. A larger curve does not help."
+notes = "Harvest-now-decrypt-later applies. Prefer a hybrid with ML-KEM during the transition."
+rationale_pt = "A Curve448 é uma curva elíptica, então o logaritmo discreto dela cai diante do algoritmo de Shor. Uma curva maior não ajuda."
+notes_pt = "Vale o risco de colher agora, decifrar depois. Prefira um esquema híbrido com ML-KEM durante a transição."
+references = ["NIST IR 8547", "NIST FIPS 203", "RFC 7748"]
+
 # ---------------------------------------------------------------------------
-# Symmetric ciphers (Grover's algorithm halves the effective key length)
+# Symmetric ciphers (Grover's algorithm halves the effective key length;
+# 3DES, DES, RC4 and Blowfish are weak classically)
 # ---------------------------------------------------------------------------
 
 [[algorithm]]
@@ -108,6 +156,8 @@ purposes = ["encryption"]
 pqc_alternatives = ["aes-256"]
 rationale = "Grover's algorithm reduces the work to recover a 128-bit key to about 2^64 quantum operations."
 notes = "NIST still treats AES-128 as acceptable (security category 1) because Grover parallelizes poorly, but CNSA 2.0 requires AES-256. Moving to AES-256 costs little."
+rationale_pt = "O algoritmo de Grover reduz o esforço para recuperar uma chave de 128 bits a cerca de 2^64 operações quânticas."
+notes_pt = "O NIST ainda considera o AES-128 aceitável (categoria de segurança 1), porque o Grover paraleliza mal, mas o CNSA 2.0 exige AES-256. Migrar para AES-256 custa pouco."
 references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
 
 [[algorithm]]
@@ -120,6 +170,8 @@ purposes = ["encryption"]
 pqc_alternatives = ["aes-256"]
 rationale = "Grover's algorithm reduces the work to recover a 192-bit key to about 2^96 quantum operations."
 notes = "Meets NIST security category 3, but CNSA 2.0 requires AES-256."
+rationale_pt = "O algoritmo de Grover reduz o esforço para recuperar uma chave de 192 bits a cerca de 2^96 operações quânticas."
+notes_pt = "Atende à categoria de segurança 3 do NIST, mas o CNSA 2.0 exige AES-256."
 references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
 
 [[algorithm]]
@@ -132,6 +184,8 @@ purposes = ["encryption"]
 pqc_alternatives = []
 rationale = "Even with Grover's algorithm, recovering a 256-bit key needs about 2^128 quantum operations."
 notes = "Considered quantum-resistant and required by CNSA 2.0."
+rationale_pt = "Mesmo com o algoritmo de Grover, recuperar uma chave de 256 bits exige cerca de 2^128 operações quânticas."
+notes_pt = "Considerado resistente a ataques quânticos e exigido pelo CNSA 2.0."
 references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
 
 [[algorithm]]
@@ -144,6 +198,8 @@ purposes = ["encryption"]
 pqc_alternatives = []
 rationale = "ChaCha20 uses a 256-bit key, which keeps about 128 bits of security against Grover's algorithm."
 notes = "No migration needed for quantum reasons."
+rationale_pt = "O ChaCha20 usa chave de 256 bits, que mantém cerca de 128 bits de segurança contra o algoritmo de Grover."
+notes_pt = "Não precisa migrar por motivos quânticos."
 references = ["RFC 8439"]
 
 [[algorithm]]
@@ -151,15 +207,60 @@ id = "3des"
 name = "Triple DES"
 family = "symmetric"
 risk = "weakened"
-attack = "grover"
+attack = "classical"
 purposes = ["encryption"]
 pqc_alternatives = ["aes-256"]
 rationale = "The effective key length is at most 112 bits, and the 64-bit block size is already exploitable classically (Sweet32)."
 notes = "Disallowed by NIST for encryption after 2023. Replace with AES-256 regardless of quantum risk."
+rationale_pt = "O tamanho efetivo da chave é de no máximo 112 bits, e o bloco de 64 bits já é explorável de forma clássica (Sweet32)."
+notes_pt = "Proibido pelo NIST para cifragem após 2023. Troque por AES-256 independentemente do risco quântico."
 references = ["NIST SP 800-131A"]
 
+[[algorithm]]
+id = "des"
+name = "DES"
+family = "symmetric"
+risk = "weakened"
+attack = "classical"
+purposes = ["encryption"]
+pqc_alternatives = ["aes-256"]
+rationale = "The 56-bit key has been within reach of brute force since 1998, with no quantum computer involved."
+notes = "Withdrawn as a standard (FIPS 46-3) in 2005. Replace with AES-256."
+rationale_pt = "A chave de 56 bits está ao alcance da força bruta desde 1998, sem nenhum computador quântico."
+notes_pt = "Retirado como padrão (FIPS 46-3) em 2005. Troque por AES-256."
+references = ["NIST SP 800-131A"]
+
+[[algorithm]]
+id = "rc4"
+name = "RC4"
+family = "symmetric"
+risk = "weakened"
+attack = "classical"
+purposes = ["encryption"]
+pqc_alternatives = ["aes-256", "chacha20"]
+rationale = "The keystream has statistical biases that allow practical plaintext recovery, with no quantum computer involved."
+notes = "Prohibited in TLS by RFC 7465. Replace with AES-256-GCM or ChaCha20-Poly1305."
+rationale_pt = "O fluxo de chave tem vieses estatísticos que permitem recuperar texto em claro na prática, sem nenhum computador quântico."
+notes_pt = "Proibido em TLS pela RFC 7465. Troque por AES-256-GCM ou ChaCha20-Poly1305."
+references = ["RFC 7465"]
+
+[[algorithm]]
+id = "blowfish"
+name = "Blowfish"
+family = "symmetric"
+risk = "weakened"
+attack = "classical"
+purposes = ["encryption"]
+pqc_alternatives = ["aes-256"]
+rationale = "The 64-bit block allows classical birthday attacks on long-lived connections (Sweet32)."
+notes = "Its own author recommends moving on. Replace with AES-256."
+rationale_pt = "O bloco de 64 bits permite ataques clássicos de aniversário em conexões longas (Sweet32)."
+notes_pt = "O próprio autor recomenda abandoná-lo. Troque por AES-256."
+references = ["Bhargavan and Leurent 2016 (Sweet32)"]
+
 # ---------------------------------------------------------------------------
-# Hash functions (Grover affects preimage resistance; collisions stay costly)
+# Hash functions (Grover affects preimage resistance; collisions stay costly;
+# MD5, SHA-1, SHA-224 and RIPEMD-160 are weak classically)
 # ---------------------------------------------------------------------------
 
 [[algorithm]]
@@ -167,11 +268,13 @@ id = "md5"
 name = "MD5"
 family = "hash"
 risk = "weakened"
-attack = "grover"
+attack = "classical"
 purposes = ["hash"]
 pqc_alternatives = ["sha2-256", "sha3"]
-rationale = "MD5 is broken classically (practical collisions) and its 128-bit output leaves little margin against Grover."
+rationale = "MD5 is broken classically: collisions are practical. That, not a quantum computer, is the reason to replace it."
 notes = "Replace with SHA-256 or SHA-3 irrespective of quantum computing."
+rationale_pt = "O MD5 está quebrado de forma clássica: colisões são práticas. Esse é o motivo para trocá-lo, e não o computador quântico."
+notes_pt = "Troque por SHA-256 ou SHA-3 independentemente da computação quântica."
 references = ["NIST SP 800-131A"]
 
 [[algorithm]]
@@ -179,11 +282,13 @@ id = "sha1"
 name = "SHA-1"
 family = "hash"
 risk = "weakened"
-attack = "grover"
+attack = "classical"
 purposes = ["hash"]
 pqc_alternatives = ["sha2-256", "sha3"]
-rationale = "SHA-1 has practical collision attacks and a 160-bit output."
+rationale = "SHA-1 has practical classical collision attacks (SHAttered, 2017). That, not a quantum computer, is the reason to replace it."
 notes = "NIST retires SHA-1 by 2030. Replace with SHA-256 or SHA-3."
+rationale_pt = "O SHA-1 tem ataques clássicos práticos de colisão (SHAttered, 2017). Esse é o motivo para trocá-lo, e não o computador quântico."
+notes_pt = "O NIST aposenta o SHA-1 até 2030. Troque por SHA-256 ou SHA-3."
 references = ["NIST SP 800-131A"]
 
 [[algorithm]]
@@ -196,6 +301,8 @@ purposes = ["hash"]
 pqc_alternatives = []
 rationale = "Grover's algorithm leaves about 128 bits of preimage resistance, and quantum collision search is not cheaper than classical."
 notes = "CNSA 2.0 requires SHA-384 or SHA-512 for national security systems."
+rationale_pt = "O algoritmo de Grover deixa cerca de 128 bits de resistência a pré-imagem, e a busca quântica de colisões não é mais barata que a clássica."
+notes_pt = "O CNSA 2.0 exige SHA-384 ou SHA-512 em sistemas de segurança nacional."
 references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
 
 [[algorithm]]
@@ -208,6 +315,8 @@ purposes = ["hash"]
 pqc_alternatives = []
 rationale = "A 384-bit output keeps a comfortable margin against Grover's algorithm."
 notes = "Meets CNSA 2.0."
+rationale_pt = "Uma saída de 384 bits mantém folga confortável contra o algoritmo de Grover."
+notes_pt = "Atende ao CNSA 2.0."
 references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
 
 [[algorithm]]
@@ -220,6 +329,8 @@ purposes = ["hash"]
 pqc_alternatives = []
 rationale = "A 512-bit output keeps a comfortable margin against Grover's algorithm."
 notes = "Meets CNSA 2.0."
+rationale_pt = "Uma saída de 512 bits mantém folga confortável contra o algoritmo de Grover."
+notes_pt = "Atende ao CNSA 2.0."
 references = ["NIST SP 800-131A", "NSA CNSA 2.0"]
 
 [[algorithm]]
@@ -232,7 +343,37 @@ purposes = ["hash"]
 pqc_alternatives = []
 rationale = "SHA-3 variants with outputs of 256 bits or more keep adequate margin against Grover's algorithm."
 notes = "No migration needed for quantum reasons."
+rationale_pt = "Variantes do SHA-3 com saída de 256 bits ou mais mantêm folga adequada contra o algoritmo de Grover."
+notes_pt = "Não precisa migrar por motivos quânticos."
 references = ["NIST FIPS 202"]
+
+[[algorithm]]
+id = "sha2-224"
+name = "SHA-224"
+family = "hash"
+risk = "weakened"
+attack = "classical"
+purposes = ["hash"]
+pqc_alternatives = ["sha2-256", "sha3"]
+rationale = "A 224-bit output gives 112 bits of collision resistance, below the 128-bit level expected of new systems."
+notes = "NIST has proposed retiring the 224-bit hash functions by the end of 2030 (SP 800-131A Rev. 3 draft). Replace with SHA-256 or longer."
+rationale_pt = "Uma saída de 224 bits dá 112 bits de resistência a colisões, abaixo do nível de 128 bits esperado de sistemas novos."
+notes_pt = "O NIST propôs aposentar as funções de hash de 224 bits até o fim de 2030 (rascunho da SP 800-131A Rev. 3). Troque por SHA-256 ou maior."
+references = ["NIST SP 800-131A"]
+
+[[algorithm]]
+id = "ripemd160"
+name = "RIPEMD-160"
+family = "hash"
+risk = "weakened"
+attack = "classical"
+purposes = ["hash"]
+pqc_alternatives = ["sha2-256", "sha3"]
+rationale = "A 160-bit output gives only 80 bits of collision resistance."
+notes = "Not a NIST-approved hash. Replace with SHA-256 or SHA-3."
+rationale_pt = "Uma saída de 160 bits dá só 80 bits de resistência a colisões."
+notes_pt = "Não é um hash aprovado pelo NIST. Troque por SHA-256 ou SHA-3."
+references = ["NIST SP 800-131A"]
 
 # ---------------------------------------------------------------------------
 # Post-quantum algorithms standardized by NIST in 2024
@@ -248,6 +389,8 @@ purposes = ["key_exchange", "encryption"]
 pqc_alternatives = []
 rationale = "Lattice-based key encapsulation based on module learning with errors, with no known efficient quantum attack."
 notes = "Parameter sets ML-KEM-512, 768 and 1024. ML-KEM-768 has 1184-byte public keys and 1088-byte ciphertexts. Use hybrid with X25519 during the transition."
+rationale_pt = "Encapsulamento de chaves baseado em reticulados (aprendizado com erros em módulos), sem ataque quântico eficiente conhecido."
+notes_pt = "Conjuntos de parâmetros ML-KEM-512, 768 e 1024. O ML-KEM-768 tem chaves públicas de 1184 bytes e textos cifrados de 1088 bytes. Use híbrido com X25519 durante a transição."
 references = ["NIST FIPS 203"]
 implementations = ["@noble/post-quantum (JavaScript)", "liboqs and liboqs-python", "OpenSSL 3.5 or later", "Bouncy Castle 1.79 or later (Java)", "crypto/mlkem (Go 1.24 or later)"]
 
@@ -261,6 +404,8 @@ purposes = ["signature"]
 pqc_alternatives = []
 rationale = "Lattice-based signature scheme with no known efficient quantum attack."
 notes = "Parameter sets ML-DSA-44, 65 and 87. ML-DSA-65 has 1952-byte public keys and 3309-byte signatures."
+rationale_pt = "Esquema de assinatura baseado em reticulados, sem ataque quântico eficiente conhecido."
+notes_pt = "Conjuntos de parâmetros ML-DSA-44, 65 e 87. O ML-DSA-65 tem chaves públicas de 1952 bytes e assinaturas de 3309 bytes."
 references = ["NIST FIPS 204"]
 implementations = ["@noble/post-quantum (JavaScript)", "liboqs and liboqs-python", "OpenSSL 3.5 or later", "Bouncy Castle 1.79 or later (Java)"]
 
@@ -274,5 +419,7 @@ purposes = ["signature"]
 pqc_alternatives = []
 rationale = "Stateless hash-based signature scheme whose security relies only on hash function properties."
 notes = "Tiny keys (32 bytes at 128-bit security) but large signatures (7856 bytes for the 128s set) and slow signing. A conservative backup to lattice schemes."
+rationale_pt = "Esquema de assinatura sem estado baseado em hash, cuja segurança depende apenas das propriedades da função de hash."
+notes_pt = "Chaves minúsculas (32 bytes com 128 bits de segurança), mas assinaturas grandes (7856 bytes no conjunto 128s) e assinatura lenta. Um reserva conservador para os esquemas de reticulados."
 references = ["NIST FIPS 205"]
 implementations = ["@noble/post-quantum (JavaScript)", "liboqs and liboqs-python", "OpenSSL 3.5 or later", "Bouncy Castle 1.79 or later (Java)"]

@@ -1,6 +1,6 @@
 //! The screen shown while a folder is being analyzed in the background.
 
-use super::ui::{ACCENT, FG, MUTED, panel};
+use super::ui::{ACCENT, MUTED, panel, shimmer};
 use crate::i18n::{Lang, fill};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout};
@@ -26,17 +26,17 @@ pub fn render(frame_: &mut Frame, path: &Path, tick: usize, lang: Lang) {
         .flex(Flex::Center)
         .areas(row);
 
+    // The spinner is slower than the shimmer, which moves on every tick.
+    let mut title = vec![Span::styled(
+        format!("{} ", frame(tick / 3)),
+        Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+    )];
+    title.extend(shimmer(
+        &fill(t.loading, &[("path", &path.display())]),
+        tick,
+    ));
     let lines = vec![
-        Line::from(vec![
-            Span::styled(
-                format!("{} ", frame(tick)),
-                Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                fill(t.loading, &[("path", &path.display())]),
-                Style::new().fg(FG),
-            ),
-        ]),
+        Line::from(title),
         Line::raw(""),
         Line::from(Span::styled(t.loading_hint, Style::new().fg(MUTED))),
     ];
