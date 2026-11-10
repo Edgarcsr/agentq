@@ -9,6 +9,7 @@ use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, Padding, Paragraph, Wrap};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // The agentq palette: white text on a neutral background, with orange kept for
 // whatever has focus (the selected row, the active tab, the focused panel).
@@ -22,7 +23,55 @@ pub(super) const DIM: Color = Color::Rgb(98, 98, 98);
 // Risk is told by weight, not by hue: the worst level is an inverted badge and
 // the others fade through shades of gray, so orange is the only color.
 pub(super) const BAR: Color = Color::Rgb(176, 176, 176);
+// Brand colors, used only to tell what a folder is in the browser.
+pub(super) const NODE: Color = Color::Rgb(170, 255, 0);
+pub(super) const GIT: Color = Color::Rgb(240, 80, 51);
 pub(super) const ON_ACCENT: Color = Color::Rgb(20, 20, 20);
+
+/// Mixes two colors; `amount` 0 is `from`, 1 is `to`.
+pub(super) fn blend(from: Color, to: Color, amount: f32) -> Color {
+    match (from, to) {
+        (Color::Rgb(a, b, c), Color::Rgb(d, e, f)) => {
+            let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * amount) as u8;
+            Color::Rgb(mix(a, d), mix(b, e), mix(c, f))
+        }
+        _ => to,
+    }
+}
+
+/// How wide the bright band of a shimmer is, in cells.
+const SHIMMER_WIDTH: f32 = 4.0;
+/// How many cells the band moves on each tick.
+const SHIMMER_SPEED: f32 = 0.55;
+
+/// Text with a soft band of light sweeping across it, left to right, for
+/// whatever is still working. The band eases in and out with a bell curve and
+/// starts and ends off the text, so the loop has no visible seam.
+pub(super) fn shimmer(text: &str, tick: usize) -> Vec<Span<'static>> {
+    let len = text.chars().count() as f32;
+    let travel = len + SHIMMER_WIDTH * 4.0;
+    let center = (tick as f32 * SHIMMER_SPEED) % travel - SHIMMER_WIDTH * 2.0;
+    text.chars()
+        .enumerate()
+        .map(|(at, ch)| {
+            let distance = (at as f32 - center) / SHIMMER_WIDTH;
+            let light = (-distance * distance).exp();
+            Span::styled(ch.to_string(), Style::new().fg(blend(DIM, FG, light)))
+        })
+        .collect()
+}
+
+static NERD_FONT: AtomicBool = AtomicBool::new(false);
+
+/// Turns on the icons of a Nerd Font (https://www.nerdfonts.com). They are
+/// off by default, as a terminal without that font draws them as boxes.
+pub fn set_nerd_font(on: bool) {
+    NERD_FONT.store(on, Ordering::Relaxed);
+}
+
+pub(super) fn nerd_font() -> bool {
+    NERD_FONT.load(Ordering::Relaxed)
+}
 
 /// Terminals narrower than this stack the list above the details.
 const WIDE: u16 = 100;
@@ -482,9 +531,10 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     // so it is never pushed off the line by them.
     if app.scanning {
         summary = vec![Span::styled(
-            format!(" {} {}", super::loading::frame(app.spinner), t.scanning),
+            format!(" {} ", super::loading::frame(app.spinner / 3)),
             Style::new().fg(ACCENT),
         )];
+        summary.extend(shimmer(t.scanning, app.spinner));
     } else if let Some(status) = &app.status {
         summary = vec![Span::styled(format!(" {status}"), Style::new().fg(ACCENT))];
     }
@@ -500,9 +550,9 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
                 ("r", t.key_rescan),
                 ("b", t.key_browse),
                 ("m", t.key_menu),
-                ("L", t.key_language),
                 ("?", t.key_help),
                 ("q", t.key_back),
+                ("shift+l", t.key_language),
             ]),
         ]),
         area,
@@ -526,7 +576,7 @@ fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
     let t = lang.t();
     let rows = [
         ("↑ ↓  j k", t.help_select),
-        ("g  G", t.help_first_last),
+        ("g  shift+g", t.help_first_last),
         ("PgUp  PgDn  space", t.help_scroll),
         ("s", t.help_hide_safe),
         ("c", t.help_confidence),
@@ -535,7 +585,7 @@ fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
         ("m", t.key_menu),
         ("1  2  Tab", t.help_tabs),
         ("mouse", t.help_mouse),
-        ("L", t.help_language),
+        ("shift+l", t.help_language),
         ("?", t.help_close),
         ("q  Esc", t.help_quit),
     ];
@@ -569,4 +619,22 @@ fn render_help(frame: &mut Frame, area: Rect, lang: Lang) {
             .block(focused_panel(t.help_title)),
         popup,
     );
+}
+#[test]
+fn the_shimmer_moves_and_keeps_the_text() {
+    let text = "Analyzing the project";
+    let at = |tick| -> Vec<Color> {
+        shimmer(text, tick)
+            .iter()
+            .map(|span| span.style.fg.unwrap())
+            .collect()
+    };
+    let joined: String = shimmer(text, 5)
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert_eq!(joined, text);
+    assert_ne!(at(10), at(11));
+    // The band leaves the text entirely, so the loop has a calm moment.
+    assert!(at(0).iter().all(|c| *c == blend(DIM, FG, 0.0)) || at(0) != at(20));
 }

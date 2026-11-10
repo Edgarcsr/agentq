@@ -37,6 +37,11 @@ struct Args {
     #[arg(long, value_parser = parse_lang)]
     lang: Option<Lang>,
 
+    /// Draw icons from a Nerd Font in the interface (also on with the
+    /// AGENTQ_NERD_FONT environment variable). Needs that font in the terminal.
+    #[arg(long)]
+    nerd_font: bool,
+
     /// Browse the findings in an interactive terminal interface.
     #[arg(short, long, conflicts_with_all = ["format", "output"])]
     tui: bool,
@@ -90,9 +95,15 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let lang = args.lang.unwrap_or_else(Lang::detect);
+    let lang = args
+        .lang
+        .or_else(|| agentq::config::Settings::load().lang())
+        .unwrap_or_else(Lang::detect);
 
     if args.tui {
+        let from_env =
+            std::env::var_os("AGENTQ_NERD_FONT").is_some_and(|v| !v.is_empty() && v != "0");
+        agentq::tui::set_nerd_font(args.nerd_font || from_env);
         return match agentq::tui::run(
             args.path.as_deref(),
             args.hide_safe,
