@@ -40,6 +40,15 @@ fn from_algorithm(algorithm: &Value) -> Option<Detection> {
         "ECDH" => Some(detection("ecdh", Purpose::KeyExchange, curve_bits)),
         "ED25519" => Some(detection("ed25519", Purpose::Signature, Some(256))),
         "X25519" => Some(detection("x25519", Purpose::KeyExchange, Some(256))),
+        "ED448" => Some(detection("ed448", Purpose::Signature, Some(448))),
+        "X448" => Some(detection("x448", Purpose::KeyExchange, Some(448))),
+        // The hash is a string or an object with a `name`.
+        "HMAC" => algorithm_name(algorithm.get("hash"))
+            .and_then(names::hash)
+            .map(|id| detection(id, Purpose::Mac, None)),
+        "PBKDF2" | "HKDF" => algorithm_name(algorithm.get("hash"))
+            .and_then(names::hash)
+            .map(|id| detection(id, Purpose::KeyDerivation, None)),
         // The key size is only known when the key is generated.
         "AES-GCM" | "AES-CBC" | "AES-CTR" | "AES-KW" => {
             let length = algorithm.get("length").as_u32()?;

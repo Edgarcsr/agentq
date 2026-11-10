@@ -2,9 +2,48 @@
 
 use super::CallSite;
 use crate::finding::{Confidence, Purpose};
-use crate::modules::common::{Detection, names};
+use crate::modules::common::{Detection, Value, names};
 
 const LIBRARY: &str = "node:crypto";
+
+/// Id given to a call that names an algorithm missing from the knowledge base.
+/// It is listed in the report for manual review instead of being dropped.
+pub const UNRECOGNIZED: &str = "unrecognized";
+
+/// A call to a known API whose literal algorithm name is not in the knowledge base.
+fn unrecognized(purpose: Purpose) -> Detection {
+    Detection {
+        confidence: Confidence::Medium,
+        ..detection(UNRECOGNIZED, purpose, None)
+    }
+}
+
+/// The digest of a signing call. `RSA-SHA256`, `ecdsa-with-SHA1` and
+/// `dsa-with-SHA1` also name the key type; a bare digest (`SHA256`) leaves it
+/// to the key, so only the hash is reported.
+fn signature_digest(name: &str) -> Vec<Detection> {
+    let lower = name.to_ascii_lowercase();
+    let (key, digest) = if let Some(rest) = lower.strip_prefix("rsa-") {
+        (Some("rsa"), rest)
+    } else if let Some(rest) = lower.strip_prefix("ecdsa-with-") {
+        (Some("ecdsa"), rest)
+    } else if let Some(rest) = lower.strip_prefix("dsa-with-") {
+        (Some("dsa"), rest)
+    } else if let Some(rest) = lower.strip_prefix("dsa-") {
+        (Some("dsa"), rest)
+    } else {
+        (None, lower.as_str())
+    };
+    let mut detections: Vec<Detection> = key
+        .map(|id| detection(id, Purpose::Signature, None))
+        .into_iter()
+        .collect();
+    // With a key type the hash is part of the same finding; alone, it is the finding.
+    if key.is_none() {
+        detections.extend(names::hash(digest).map(|id| detection(id, Purpose::Hash, None)));
+    }
+    detections
+}
 
 fn detection(algorithm: &'static str, purpose: Purpose, key_size: Option<u32>) -> Detection {
     Detection {
@@ -59,6 +98,8 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
                 }
                 Some("ed25519") => vec![detection("ed25519", Purpose::Signature, Some(256))],
                 Some("x25519") => vec![detection("x25519", Purpose::KeyExchange, Some(256))],
+                Some("ed448") => vec![detection("ed448", Purpose::Signature, Some(448))],
+                Some("x448") => vec![detection("x448", Purpose::KeyExchange, Some(448))],
                 Some("dh") => vec![detection("dh", Purpose::KeyExchange, None)],
                 // Post-quantum key types, e.g. `ml-kem-768` or `ml-dsa-65`.
                 Some(kind) if kind.starts_with("ml-kem-") => {
@@ -70,7 +111,8 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
                 Some(kind) if kind.starts_with("slh-dsa-") => {
                     vec![detection("slh-dsa", Purpose::Signature, None)]
                 }
-                _ => vec![],
+                Some(_) => vec![unrecognized(Purpose::Unknown)],
+                None => vec![],
             }
         }
         "generateKey" | "generateKeySync" => {
@@ -93,29 +135,39 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
             let bits = arg(0).as_str().and_then(names::curve_bits);
             vec![detection("ecdh", Purpose::KeyExchange, bits)]
         }
-        "createSign" | "createVerify" => match arg(0).as_str() {
-            Some(name) if name.to_ascii_lowercase().starts_with("rsa-") => {
-                vec![detection("rsa", Purpose::Signature, None)]
-            }
-            _ => vec![],
-        },
+        "createSign" | "createVerify" => arg(0).as_str().map(signature_digest).unwrap_or_default(),
+        // sign(algorithm, data, key): the digest is null for Ed25519 and Ed448.
+        "sign" | "verify" => arg(0).as_str().map(signature_digest).unwrap_or_default(),
         "publicEncrypt" | "privateDecrypt" | "privateEncrypt" | "publicDecrypt" => {
             vec![detection("rsa", Purpose::Encryption, None)]
         }
         "createCipheriv" | "createDecipheriv" | "createCipher" | "createDecipher" => arg(0)
             .as_str()
-            .and_then(names::symmetric)
-            .map(|(id, bits)| detection(id, Purpose::Encryption, bits))
+            .map(|name| match names::symmetric(name) {
+                Some((id, bits)) => detection(id, Purpose::Encryption, bits),
+                None => unrecognized(Purpose::Encryption),
+            })
             .into_iter()
             .collect(),
-        "createHash" | "createHmac" | "hash" => arg(0)
-            .as_str()
-            .and_then(names::hash)
-            .map(|id| detection(id, Purpose::Hash, None))
-            .into_iter()
-            .collect(),
+        "createHash" | "hash" => named_hash(arg(0), Purpose::Hash),
+        "createHmac" => named_hash(arg(0), Purpose::Mac),
+        // pbkdf2(password, salt, iterations, keylen, digest)
+        "pbkdf2" | "pbkdf2Sync" => named_hash(arg(4), Purpose::KeyDerivation),
+        // hkdf(digest, ikm, salt, info, keylen)
+        "hkdf" | "hkdfSync" => named_hash(arg(0), Purpose::KeyDerivation),
         _ => vec![],
     }
+}
+
+/// The hash named by a literal argument, used for `purpose`.
+fn named_hash(name: &Value, purpose: Purpose) -> Vec<Detection> {
+    name.as_str()
+        .map(|name| match names::hash(name) {
+            Some(id) => detection(id, purpose, None),
+            None => unrecognized(purpose),
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Purpose implied by calls that take a key but do not name its algorithm, such
