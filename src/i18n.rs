@@ -75,6 +75,8 @@ impl Lang {
             Purpose::Signature => t.purpose_signature,
             Purpose::Encryption => t.purpose_encryption,
             Purpose::Hash => t.purpose_hash,
+            Purpose::Mac => t.purpose_mac,
+            Purpose::KeyDerivation => t.purpose_key_derivation,
             Purpose::Unknown => t.purpose_unknown,
         }
     }
@@ -138,6 +140,8 @@ impl Lang {
             Attack::Shor => t.attack_shor,
             Attack::Grover => t.attack_grover,
             Attack::None => t.attack_none,
+            // The weakness predates quantum computers, so it gets its own sentence.
+            Attack::Classical => return t.risk_weak_classically.to_string(),
         };
         match risk {
             QuantumRisk::Broken => fill(t.risk_broken_by, &[("attack", &attack)]),
@@ -179,6 +183,8 @@ texts! {
     purpose_signature: "signature", "assinatura";
     purpose_encryption: "encryption", "cifragem";
     purpose_hash: "hash", "hash";
+    purpose_mac: "message authentication", "autenticação de mensagem";
+    purpose_key_derivation: "key derivation", "derivação de chaves";
     purpose_unknown: "unknown", "desconhecido";
     urgency_high: "high", "alta";
     urgency_medium: "medium", "média";
@@ -198,6 +204,7 @@ texts! {
     attack_grover: "Grover's algorithm", "algoritmo de Grover";
     attack_none: "no known quantum attack", "nenhum ataque quântico conhecido";
     risk_broken_by: "broken by {attack}", "quebrado pelo {attack}";
+    risk_weak_classically: "already weak against classical attacks", "já é fraco contra ataques clássicos";
     risk_weakened_by: "weakened by {attack}", "enfraquecido pelo {attack}";
 
     // --- text produced by the assessment ---
@@ -211,6 +218,12 @@ texts! {
         "Migre primeiro as assinaturas de longa duração (certificados, firmware, arquivos assinados). Assinaturas e chaves pós-quânticas são bem maiores, então confira os limites de tamanho em protocolos e armazenamento.";
     advice_symmetric: "Prefer 256-bit symmetric keys and 256-bit or longer hash outputs.",
         "Prefira chaves simétricas de 256 bits e saídas de hash de 256 bits ou mais.";
+    ctx_mac: "Used as a keyed MAC (HMAC), which does not depend on collision resistance, so this is less severe than the same hash used for digests or signatures.",
+        "Usado como MAC com chave (HMAC), que não depende de resistência a colisões; por isso é menos grave que o mesmo hash usado em resumos ou assinaturas.";
+    ctx_kdf: "Used to derive keys. The quantum speed-up here is Grover's, which a longer output and a stronger hash absorb.",
+        "Usado para derivar chaves. O ganho quântico aqui é o do Grover, que uma saída mais longa e um hash mais forte absorvem.";
+    advice_small_key: "A {bits}-bit key is already below the 2048-bit minimum for classical security (NIST SP 800-131A); replace it regardless of the quantum timeline.",
+        "Uma chave de {bits} bits já está abaixo do mínimo de 2048 bits para a segurança clássica (NIST SP 800-131A); troque-a independentemente do cronograma quântico.";
     advice_unknown_purpose: "The purpose of this key could not be determined; check how it is used to choose between a key encapsulation mechanism (ML-KEM) and a signature scheme (ML-DSA).",
         "Não foi possível determinar para que serve esta chave; veja como ela é usada para escolher entre um mecanismo de encapsulamento de chaves (ML-KEM) e um esquema de assinatura (ML-DSA).";
 
@@ -222,6 +235,7 @@ texts! {
     report_summary: "Summary", "Resumo";
     report_uses_found: "{n} cryptographic use(s) found", "{n} uso(s) de criptografia encontrado(s)";
     report_need_urgent: "{n} need urgent attention", "{n} precisam de atenção urgente";
+    report_unassessed: "Not in the knowledge base (review by hand)", "Fora da base de conhecimento (revisar manualmente)";
     report_findings_ranked: "Findings (most urgent first)", "Achados (mais urgentes primeiro)";
     confidence_label: "confidence", "confiança";
     why: "Why", "Por quê";
@@ -324,7 +338,7 @@ texts! {
     ov_vulnerable: "Quantum-vulnerable", "Vulneráveis a quânticos";
     ov_broken_by_shor: "broken by Shor", "quebrados por Shor";
     ov_weakened: "Weakened", "Enfraquecidos";
-    ov_weakened_by_grover: "weakened by Grover", "enfraquecidos por Grover";
+    ov_weakened_by_grover: "weak or weakened", "fracos ou enfraquecidos";
     ov_safe: "Already safe", "Já seguros";
     ov_no_migration: "no migration needed", "nada a migrar";
     ov_by_urgency: "By urgency", "Por urgência";

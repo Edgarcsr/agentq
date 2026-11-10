@@ -15,6 +15,8 @@ pub fn hash(name: &str) -> Option<&'static str> {
         Some("md5")
     } else if compact == "sha1" {
         Some("sha1")
+    } else if compact == "sha224" {
+        Some("sha2-224")
     } else if compact == "sha256" {
         Some("sha2-256")
     } else if compact == "sha384" {
@@ -23,6 +25,8 @@ pub fn hash(name: &str) -> Option<&'static str> {
         Some("sha2-512")
     } else if compact.starts_with("sha3") {
         Some("sha3")
+    } else if compact == "ripemd160" || compact == "rmd160" {
+        Some("ripemd160")
     } else {
         None
     }
@@ -42,6 +46,13 @@ pub fn symmetric(name: &str) -> Option<(&'static str, Option<u32>)> {
         Some(("3des", None))
     } else if lower.starts_with("chacha20") {
         Some(("chacha20", Some(256)))
+    } else if lower == "des" || lower.starts_with("des-") {
+        // `des-ede*` (Triple DES) was matched above, so this is single DES.
+        Some(("des", Some(56)))
+    } else if lower.starts_with("rc4") {
+        Some(("rc4", None))
+    } else if lower == "bf" || lower.starts_with("bf-") || lower.starts_with("blowfish") {
+        Some(("blowfish", None))
     } else {
         None
     }
@@ -101,6 +112,8 @@ mod tests {
         assert_eq!(hash("SHA-384"), Some("sha2-384"));
         assert_eq!(hash("sha512-256"), Some("sha2-512"));
         assert_eq!(hash("sha3-256"), Some("sha3"));
+        assert_eq!(hash("sha224"), Some("sha2-224"));
+        assert_eq!(hash("RIPEMD160"), Some("ripemd160"));
         assert_eq!(hash("whirlpool"), None);
     }
 
@@ -113,7 +126,10 @@ mod tests {
             symmetric("chacha20-poly1305"),
             Some(("chacha20", Some(256)))
         );
-        assert_eq!(symmetric("rc4"), None);
+        assert_eq!(symmetric("rc4"), Some(("rc4", None)));
+        assert_eq!(symmetric("des-cbc"), Some(("des", Some(56))));
+        assert_eq!(symmetric("bf-cbc"), Some(("blowfish", None)));
+        assert_eq!(symmetric("camellia-256-cbc"), None);
     }
 
     #[test]

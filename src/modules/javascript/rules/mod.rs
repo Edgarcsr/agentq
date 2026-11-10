@@ -54,6 +54,9 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
     }
 }
 
+/// Library reported for the calls recognized by [`hint`].
+pub const HINT_LIBRARY: &str = "node:crypto";
+
 /// Purpose implied by a call that creates no finding by itself.
 pub fn hint(site: &CallSite) -> Option<crate::finding::Purpose> {
     match site.resolved.module.as_str() {

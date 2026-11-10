@@ -23,6 +23,9 @@ pub enum Family {
 pub enum Attack {
     Shor,
     Grover,
+    /// Weak for reasons that do not involve a quantum computer: practical
+    /// classical attacks, or a key or output that is too short.
+    Classical,
     None,
 }
 

@@ -423,6 +423,7 @@ mod tests {
         let analysis = Analysis {
             files: fixtures::files(),
             assessments: fixtures::assessments(),
+            unassessed: vec![],
         };
         let mut app = App::new(
             "project".into(),
@@ -545,6 +546,7 @@ mod tests {
         app.replace(Analysis {
             files: fixtures::files(),
             assessments: vec![],
+            unassessed: vec![],
         });
         assert!(app.hide_safe);
         assert_eq!(app.selected, 0);
@@ -557,6 +559,7 @@ mod tests {
         let analysis = Analysis {
             files: fixtures::files(),
             assessments: fixtures::assessments(),
+            unassessed: vec![],
         };
         let mut app = App::new(
             "project".into(),

@@ -58,6 +58,21 @@ pub fn render(report: &Report) -> String {
         .unwrap();
     }
 
+    if !report.unassessed.is_empty() {
+        writeln!(out, "\n{}", t.report_unassessed).unwrap();
+        for finding in report.unassessed {
+            writeln!(
+                out,
+                "  {}:{}:{}  {}",
+                finding.file.display(),
+                finding.line,
+                finding.column,
+                finding.snippet
+            )
+            .unwrap();
+        }
+    }
+
     if report.assessments.is_empty() {
         return out;
     }
@@ -142,6 +157,7 @@ mod tests {
             assessments: vec![],
             knowledge_version: "t".into(),
             lang: crate::i18n::Lang::En,
+            unassessed: &[],
         };
         let text = render(&report);
         assert!(text.contains("0 cryptographic use(s) found"));
