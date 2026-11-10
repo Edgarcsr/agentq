@@ -134,6 +134,8 @@ fn rsa_encryption_and_signing_apis() {
             found("rsa", Purpose::Encryption, None),
             found("rsa", Purpose::Encryption, None),
             found("rsa", Purpose::Signature, None),
+            // A bare digest leaves the key type to the key, so only the hash is known.
+            found("sha2-256", Purpose::Hash, None),
         ]
     );
 }
@@ -174,7 +176,7 @@ fn hash_functions() {
         vec![
             found("md5", Purpose::Hash, None),
             found("sha1", Purpose::Hash, None),
-            found("sha2-256", Purpose::Hash, None),
+            found("sha2-256", Purpose::Mac, None),
             found("sha2-512", Purpose::Hash, None),
         ]
     );
@@ -537,7 +539,7 @@ fn crypto_js_hashes_and_triple_des() {
         vec![
             found("md5", Purpose::Hash, None),
             found("sha1", Purpose::Hash, None),
-            found("sha2-256", Purpose::Hash, None),
+            found("sha2-256", Purpose::Mac, None),
             found("md5", Purpose::Hash, None),
             found("sha2-512", Purpose::Hash, None),
             found("3des", Purpose::Encryption, None),
@@ -567,7 +569,10 @@ fn rsa_key_purpose_is_inferred_from_the_rest_of_the_file() {
     ";
     assert_eq!(
         detect(signing),
-        vec![found("rsa", Purpose::Signature, Some(2048))]
+        vec![
+            found("rsa", Purpose::Signature, Some(2048)),
+            found("sha2-256", Purpose::Hash, None),
+        ]
     );
 }
 
@@ -590,20 +595,35 @@ fn ec_key_purpose_and_algorithm_are_inferred() {
     ";
     assert_eq!(
         detect(signing),
-        vec![found("ecdsa", Purpose::Signature, Some(256))]
+        vec![
+            found("ecdsa", Purpose::Signature, Some(256)),
+            found("sha2-256", Purpose::Hash, None),
+        ]
     );
 }
 
 #[test]
-fn inferred_purpose_lowers_confidence_to_medium() {
-    let findings = JavaScriptAnalyzer.analyze(
+fn inferred_purpose_lowers_confidence() {
+    // The key is passed to the call that shows its purpose: medium.
+    let linked = JavaScriptAnalyzer.analyze(
+        Path::new("a.js"),
+        "const c = require('crypto');
+         const { publicKey } = c.generateKeyPairSync('rsa', { modulusLength: 2048 });
+         c.publicEncrypt(publicKey, b);",
+    );
+    assert_eq!(linked[0].purpose, Purpose::Encryption);
+    assert_eq!(linked[0].confidence, Confidence::Medium);
+    assert_eq!(linked[1].confidence, Confidence::High);
+
+    // Nothing links the key to the call, so it is a file-level guess: low.
+    let guessed = JavaScriptAnalyzer.analyze(
         Path::new("a.js"),
         "const c = require('crypto');
          c.generateKeyPairSync('rsa', { modulusLength: 2048 });
          c.publicEncrypt(k, b);",
     );
-    assert_eq!(findings[0].confidence, Confidence::Medium);
-    assert_eq!(findings[1].confidence, Confidence::High);
+    assert_eq!(guessed[0].purpose, Purpose::Encryption);
+    assert_eq!(guessed[0].confidence, Confidence::Low);
 }
 
 #[test]
@@ -782,4 +802,113 @@ fn better_auth_without_the_jwt_plugin_has_no_findings() {
         export const auth = betterAuth({ plugins: [twoFactor()] });
     ";
     assert_eq!(detect(source), vec![]);
+}
+
+#[test]
+fn hmac_and_key_derivation_have_their_own_purposes() {
+    let source = "
+        const crypto = require('crypto');
+        crypto.createHmac('md5', key);
+        crypto.pbkdf2Sync(password, salt, 1000, 32, 'sha1');
+        crypto.hkdfSync('sha512', ikm, salt, info, 64);
+        crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 1, hash: 'SHA-1' }, k, a, false, u);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("md5", Purpose::Mac, None),
+            found("sha1", Purpose::KeyDerivation, None),
+            found("sha2-512", Purpose::KeyDerivation, None),
+            found("sha2-256", Purpose::Mac, None),
+            found("sha1", Purpose::KeyDerivation, None),
+        ]
+    );
+}
+
+#[test]
+fn signing_calls_name_the_key_type_or_only_the_digest() {
+    let source = "
+        const crypto = require('crypto');
+        crypto.createSign('ecdsa-with-SHA1');
+        crypto.createVerify('DSA-SHA1');
+        crypto.sign('sha512', data, key);
+        crypto.sign(null, data, key);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("ecdsa", Purpose::Signature, None),
+            found("dsa", Purpose::Signature, None),
+            found("sha2-512", Purpose::Hash, None),
+        ]
+    );
+}
+
+#[test]
+fn legacy_ciphers_hashes_and_448_bit_curves() {
+    let source = "
+        const crypto = require('crypto');
+        crypto.createCipheriv('rc4', key, '');
+        crypto.createCipheriv('des-cbc', key, iv);
+        crypto.createCipheriv('bf-cbc', key, iv);
+        crypto.createHash('ripemd160');
+        crypto.createHash('sha224');
+        crypto.generateKeyPairSync('ed448');
+        crypto.generateKeyPairSync('x448');
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rc4", Purpose::Encryption, None),
+            found("des", Purpose::Encryption, Some(56)),
+            found("blowfish", Purpose::Encryption, None),
+            found("ripemd160", Purpose::Hash, None),
+            found("sha2-224", Purpose::Hash, None),
+            found("ed448", Purpose::Signature, Some(448)),
+            found("x448", Purpose::KeyExchange, Some(448)),
+        ]
+    );
+}
+
+#[test]
+fn algorithms_missing_from_the_knowledge_base_are_reported_as_unrecognized() {
+    let source = "
+        const crypto = require('crypto');
+        crypto.createCipheriv('camellia-256-cbc', key, iv);
+        crypto.createHash('whirlpool');
+        crypto.createHash(process.env.HASH);
+    ";
+    // A name that cannot be read statically is still not reported.
+    assert_eq!(
+        detect(source),
+        vec![
+            found("unrecognized", Purpose::Encryption, None),
+            found("unrecognized", Purpose::Hash, None),
+        ]
+    );
+}
+
+#[test]
+fn two_keys_in_one_file_get_the_purpose_of_the_call_that_receives_each() {
+    let source = "
+        const crypto = require('crypto');
+        const jwt = require('jsonwebtoken');
+        const signing = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+        const { publicKey: sealKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 4096 });
+        const unused = crypto.generateKeyPairSync('rsa', { modulusLength: 3072 });
+        jwt.sign(payload, signing.privateKey, { algorithm: 'RS256' });
+        crypto.publicEncrypt(sealKey, secret);
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Signature, Some(2048)),
+            found("rsa", Purpose::Encryption, Some(4096)),
+            // No call receives it, and the others are explained by their own keys.
+            found("rsa", Purpose::Unknown, Some(3072)),
+            found("rsa", Purpose::Signature, None),
+            found("rsa", Purpose::Encryption, None),
+        ]
+    );
 }

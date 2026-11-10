@@ -133,6 +133,7 @@ fn main() -> ExitCode {
         root: path.display().to_string(),
         files: &analysis.files,
         assessments,
+        unassessed: &analysis.unassessed,
         knowledge_version: knowledge.version.clone(),
         lang,
     };

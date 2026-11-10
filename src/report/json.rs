@@ -1,5 +1,6 @@
 use super::{Report, Summary};
 use crate::assess::Assessment;
+use crate::finding::Finding;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -12,6 +13,8 @@ struct JsonReport<'a> {
     root: &'a str,
     summary: Summary,
     findings: Vec<&'a Assessment>,
+    /// Uses of algorithms missing from the knowledge base, to review by hand.
+    unassessed: &'a [Finding],
 }
 
 pub fn render(report: &Report) -> String {
@@ -23,6 +26,7 @@ pub fn render(report: &Report) -> String {
         root: &report.root,
         summary: report.summary(),
         findings: report.sorted_assessments(),
+        unassessed: report.unassessed,
     };
     serde_json::to_string_pretty(&document).expect("report is serializable")
 }

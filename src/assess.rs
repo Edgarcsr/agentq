@@ -62,6 +62,12 @@ pub fn assess(finding: &Finding, knowledge: &KnowledgeBase, lang: Lang) -> Optio
             advice.push(notes.to_string());
         }
     }
+    if let Some(bits) = small_classical_key(&finding.algorithm, finding.key_size) {
+        advice.push(crate::i18n::fill(
+            lang.t().advice_small_key,
+            &[("bits", &bits)],
+        ));
+    }
     if finding.purpose == Purpose::Unknown && algorithm.risk == QuantumRisk::Broken {
         advice.push(lang.t().advice_unknown_purpose.to_string());
     }
@@ -86,6 +92,13 @@ pub fn assess_all(findings: &[Finding], knowledge: &KnowledgeBase, lang: Lang) -
         .collect()
 }
 
+/// The key size, when it is already too short against classical attacks:
+/// under 2048 bits for RSA, DSA and finite-field Diffie-Hellman.
+fn small_classical_key(algorithm: &str, key_size: Option<u32>) -> Option<u32> {
+    let bits = key_size?;
+    (matches!(algorithm, "rsa" | "dsa" | "dh") && bits < 2048).then_some(bits)
+}
+
 fn urgency(risk: QuantumRisk, purpose: Purpose) -> Urgency {
     match (risk, purpose) {
         (QuantumRisk::Safe, _) => Urgency::None,
@@ -95,7 +108,10 @@ fn urgency(risk: QuantumRisk, purpose: Purpose) -> Urgency {
         (QuantumRisk::Broken, Purpose::KeyExchange | Purpose::Encryption | Purpose::Unknown) => {
             Urgency::High
         }
-        (QuantumRisk::Broken, Purpose::Signature | Purpose::Hash) => Urgency::Medium,
+        (
+            QuantumRisk::Broken,
+            Purpose::Signature | Purpose::Hash | Purpose::Mac | Purpose::KeyDerivation,
+        ) => Urgency::Medium,
     }
 }
 
@@ -104,6 +120,8 @@ fn purpose_context(risk: QuantumRisk, purpose: Purpose, lang: Lang) -> Option<&'
     match (risk, purpose) {
         (QuantumRisk::Broken, Purpose::KeyExchange | Purpose::Encryption) => Some(t.ctx_harvest),
         (QuantumRisk::Broken, Purpose::Signature) => Some(t.ctx_forge),
+        (QuantumRisk::Weakened, Purpose::Mac) => Some(t.ctx_mac),
+        (QuantumRisk::Weakened, Purpose::KeyDerivation) => Some(t.ctx_kdf),
         _ => None,
     }
 }
