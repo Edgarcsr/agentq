@@ -20,6 +20,7 @@ fn app_with(assessments: Vec<crate::assess::Assessment>) -> App {
     let analysis = Analysis {
         files: fixtures::files(),
         assessments,
+        unassessed: vec![],
     };
     let mut app = App::new(
         "project".into(),
@@ -189,6 +190,7 @@ fn rescan_message_appears_in_the_footer() {
     app.replace(Analysis {
         files: fixtures::files(),
         assessments: fixtures::assessments(),
+        unassessed: vec![],
     });
     let screen = draw(&mut app, 140, 24);
     assert!(
@@ -583,6 +585,7 @@ fn app_in(lang: Lang) -> App {
                 crate::knowledge::KnowledgeBase::embedded(),
                 lang,
             ),
+            unassessed: vec![],
         },
         "2026-11".into(),
         false,
@@ -742,6 +745,7 @@ fn the_rescan_status_is_translated() {
     app.replace(Analysis {
         files: fixtures::files(),
         assessments: fixtures::assessments(),
+        unassessed: vec![],
     });
     // It is visible even on a terminal too narrow for the whole summary.
     assert!(draw(&mut app, 80, 24).contains("Análise refeita: 3 uso(s) em 4 arquivo(s)"));

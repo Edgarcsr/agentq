@@ -43,6 +43,20 @@ pub fn render(report: &Report) -> String {
         .unwrap();
     }
 
+    if !report.unassessed.is_empty() {
+        writeln!(out, "\n## {}\n", t.report_unassessed).unwrap();
+        for finding in report.unassessed {
+            writeln!(
+                out,
+                "- `{}:{}` `{}`",
+                finding.file.display(),
+                finding.line,
+                finding.snippet.replace('`', "'")
+            )
+            .unwrap();
+        }
+    }
+
     if report.assessments.is_empty() {
         return out;
     }

@@ -11,7 +11,7 @@ fn corpus() -> std::path::PathBuf {
 fn node_corpus_quality_does_not_regress() {
     let evaluation = evaluate(&corpus());
     assert_eq!(evaluation.files, 12);
-    assert_eq!(evaluation.expected, 48);
+    assert_eq!(evaluation.expected, 49);
 
     let tool = &evaluation.tool.overall;
     assert!(tool.precision().unwrap() >= 0.99, "{tool:?}");
