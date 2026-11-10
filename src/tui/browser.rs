@@ -1,7 +1,8 @@
 //! The folder browser shown when no path is given: pick the project to analyze.
 
 use super::ui::{
-    ACCENT, BORDER, FG, MUTED, ON_ACCENT, focused_panel, key_hints, row_bar, selected_symbol,
+    ACCENT, BORDER, FG, GIT, MUTED, NODE, ON_ACCENT, focused_panel, key_hints, nerd_font, row_bar,
+    selected_symbol,
 };
 use crate::i18n::{Lang, fill};
 use ratatui::Frame;
@@ -287,16 +288,26 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
                     Span::styled(format!("  {}", t.br_parent), Style::new().fg(MUTED)),
                 ]),
                 EntryKind::Dir => {
-                    let mut spans = vec![Span::styled(
+                    let mut spans = Vec::new();
+                    if nerd_font() {
+                        // nf-dev-nodejs_small, nf-dev-git and nf-fa-folder.
+                        let (icon, color) = match entry.hint {
+                            Some(Hint::Node) => ("\u{e718}", NODE),
+                            Some(Hint::Git) => ("\u{e702}", GIT),
+                            None => ("\u{f07b}", MUTED),
+                        };
+                        spans.push(Span::styled(format!("{icon} "), Style::new().fg(color)));
+                    }
+                    spans.push(Span::styled(
                         format!("{}/", entry.name),
                         Style::new().fg(FG),
-                    )];
+                    ));
                     if let Some(hint) = entry.hint {
-                        let label = match hint {
-                            Hint::Node => t.hint_node,
-                            Hint::Git => t.hint_git,
+                        let (label, color) = match hint {
+                            Hint::Node => (t.hint_node, NODE),
+                            Hint::Git => (t.hint_git, MUTED),
                         };
-                        spans.push(Span::styled(format!("  {label}"), Style::new().fg(ACCENT)));
+                        spans.push(Span::styled(format!("  {label}"), Style::new().fg(color)));
                     }
                     Line::from(spans)
                 }
@@ -345,7 +356,7 @@ pub fn render(frame: &mut Frame, browser: &mut Browser, lang: Lang) {
         ("a", t.br_analyze_here),
         (".", t.br_hidden),
         ("~", t.br_home),
-        ("L", t.key_language),
+        ("shift+l", t.key_language),
         ("q", t.br_menu),
     ]);
     let click = Line::from(Span::styled(
