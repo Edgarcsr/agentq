@@ -294,7 +294,7 @@ texts! {
 
     // --- terminal interface: background work ---
     loading: "Analyzing {path}", "Analisando {path}";
-    loading_hint: "Esc cancels · L language · q menu", "Esc cancela · L idioma · q menu";
+    loading_hint: "Esc cancels · shift+l language · q menu", "Esc cancela · shift+l idioma · q menu";
     scanning: "Scanning…", "Analisando…";
 
     // --- terminal interface: help ---
@@ -363,12 +363,23 @@ texts! {
     menu_browse: "Choose a project", "Escolher um projeto";
     menu_browse_hint: "browse folders", "navegar pelas pastas";
     menu_here: "Analyze this folder", "Analisar esta pasta";
-    menu_language: "Language", "Idioma";
-    menu_language_hint: "press Enter to switch", "Enter para trocar";
+    menu_settings: "Settings", "Configurações";
+    menu_settings_hint: "language and logo", "idioma e logo";
     menu_quit: "Quit", "Sair";
     menu_select: "select", "selecionar";
     menu_choose: "choose", "escolher";
     key_menu: "menu", "menu";
+
+    // --- terminal interface: settings ---
+    settings_title: "settings", "configurações";
+    settings_language: "Language", "Idioma";
+    settings_logo: "Logo", "Logo";
+    settings_saved_in: "saved in", "salvo em";
+    settings_drag: "drag the logo to turn it", "arraste o logo para girá-lo";
+    key_change: "change", "alterar";
+    logo_planet: "Planet", "Planeta";
+    logo_lock: "Padlock", "Cadeado";
+    logo_key: "Key", "Chave";
 }
 
 #[cfg(test)]

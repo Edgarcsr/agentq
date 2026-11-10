@@ -1,12 +1,13 @@
 //! The main menu: where the interface starts when no project is given, and
 //! where every other screen can come back to.
 
+use super::logo::{ART_ROWS, Logo, Spin};
 use super::ui::{ACCENT, DIM, FG, MUTED, ON_ACCENT, focused_panel, key_hints, row_bar};
 use crate::i18n::Lang;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 use ratatui::layout::{Constraint, Flex, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
@@ -14,23 +15,26 @@ use ratatui::widgets::{Paragraph, Wrap};
 pub enum Item {
     Browse,
     Here,
-    Language,
+    Settings,
     Quit,
 }
 
-const ITEMS: [Item; 4] = [Item::Browse, Item::Here, Item::Language, Item::Quit];
+const ITEMS: [Item; 4] = [Item::Browse, Item::Here, Item::Settings, Item::Quit];
 
 /// What the menu asks the application to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Browse,
     AnalyzeHere,
+    Settings,
     SwitchLanguage,
     Quit,
 }
 
 #[derive(Default)]
 pub struct Menu {
+    /// Which picture is drawn at the top; see the `logo` module.
+    pub logo: Logo,
     pub selected: usize,
     /// The rows of the items, filled in by the renderer.
     pub list_area: Rect,
@@ -38,47 +42,14 @@ pub struct Menu {
     pub logo_area: Rect,
     /// The last place the pointer was seen.
     pub pointer: Option<Position>,
-    /// Where the electron is on its orbit; moves on every tick.
+    /// How far the animation has gone; moves on every tick.
     pub angle: f32,
     /// How much the pointer lights the picture (0 to 1); eases toward its target.
     pub glow: f32,
-    /// Which way the pointer is from the planet, kept while the glow fades.
+    /// Which way the pointer is from the picture, kept while the glow fades.
     pub aim: (f32, f32),
-}
-
-/// Height of the picture in rows. It is drawn with braille characters, which
-/// hold a grid of 2 by 4 dots each, so curves come out smooth.
-const ART_ROWS: u16 = 9;
-
-/// One orbit: semi-axes and tilt, in dots.
-struct Orbit {
-    a: f32,
-    b: f32,
-    tilt: f32,
-}
-
-const ORBITS: [Orbit; 1] = [Orbit {
-    a: 56.0,
-    b: 9.0,
-    tilt: -0.2,
-}];
-
-impl Orbit {
-    /// The point at angle `t` relative to the planet's center, and whether it
-    /// passes in front of the planet.
-    fn at(&self, t: f32) -> (f32, f32, bool) {
-        let (x, y) = (self.a * t.cos(), self.b * t.sin());
-        let (sin, cos) = self.tilt.sin_cos();
-        (x * cos - y * sin, x * sin + y * cos, t.sin() > 0.0)
-    }
-}
-
-fn mix(a: usize, b: usize) -> usize {
-    let mut h = (a as u32).wrapping_mul(0x9E37_79B1) ^ (b as u32).wrapping_mul(0x85EB_CA6B);
-    h ^= h >> 15;
-    h = h.wrapping_mul(0x2C1B_3C6D);
-    h ^= h >> 12;
-    h as usize
+    /// The user's hand on a 3D logo: how far it was turned and dragged.
+    pub spin: Spin,
 }
 
 fn near(area: Rect, p: Position) -> bool {
@@ -91,206 +62,12 @@ fn near(area: Rect, p: Position) -> bool {
     .contains(p)
 }
 
-/// Mixes two colors; `amount` 0 is `from`, 1 is `to`.
-fn blend(from: Color, to: Color, amount: f32) -> Color {
-    match (from, to) {
-        (Color::Rgb(a, b, c), Color::Rgb(d, e, f)) => {
-            let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * amount) as u8;
-            Color::Rgb(mix(a, d), mix(b, e), mix(c, f))
-        }
-        _ => to,
-    }
-}
-
-fn gray(level: u8) -> Color {
-    Color::Rgb(level, level, level)
-}
-
-/// What is drawn in a cell, from the back to the front.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Layer {
-    Star,
-    Back,
-    Planet,
-    Front,
-    Electron,
-}
-
-/// A canvas of dots that is turned into braille characters.
-struct Canvas {
-    cols: usize,
-    rows: usize,
-    bits: Vec<u8>,
-    layer: Vec<Option<Layer>>,
-}
-
-impl Canvas {
-    fn new(cols: usize, rows: usize) -> Canvas {
-        Canvas {
-            cols,
-            rows,
-            bits: vec![0; cols * rows],
-            layer: vec![None; cols * rows],
-        }
-    }
-
-    fn dot(&mut self, x: i32, y: i32, layer: Layer) {
-        if x < 0 || y < 0 {
-            return;
-        }
-        let (x, y) = (x as usize, y as usize);
-        let (col, row) = (x / 2, y / 4);
-        if col >= self.cols || row >= self.rows {
-            return;
-        }
-        const BITS: [[u8; 4]; 2] = [[0x01, 0x02, 0x04, 0x40], [0x08, 0x10, 0x20, 0x80]];
-        let cell = row * self.cols + col;
-        self.bits[cell] |= BITS[x % 2][y % 4];
-        if self.layer[cell].is_none_or(|old| layer > old) {
-            self.layer[cell] = Some(layer);
-        }
-    }
-
-    fn clear(&mut self, x: i32, y: i32) {
-        let (col, row) = (x as usize / 2, y as usize / 4);
-        if x >= 0 && y >= 0 && col < self.cols && row < self.rows {
-            const BITS: [[u8; 4]; 2] = [[0x01, 0x02, 0x04, 0x40], [0x08, 0x10, 0x20, 0x80]];
-            self.bits[row * self.cols + col] &= !BITS[x as usize % 2][y as usize % 4];
-        }
-    }
-}
-
-/// Ordered dithering: a dot is lit when the brightness beats this threshold.
-const BAYER: [[f32; 4]; 4] = [
-    [0.0, 8.0, 2.0, 10.0],
-    [12.0, 4.0, 14.0, 6.0],
-    [3.0, 11.0, 1.0, 9.0],
-    [15.0, 7.0, 13.0, 5.0],
-];
-
-/// The picture as lines: a planet with an orbit, the electron at `angle`.
-/// Apart from that motion, `glow` (0 to 1) turns the orbit orange and `aim`
-/// moves the light on the planet toward one side; both ease in and out.
-fn art_lines(area: Rect, glow: f32, aim: (f32, f32), angle: f32) -> Vec<Line<'static>> {
-    let (cols, rows) = (usize::from(area.width), usize::from(ART_ROWS));
-    let mut canvas = Canvas::new(cols, rows);
-    let (w, h) = (cols as f32 * 2.0, rows as f32 * 4.0);
-    let (cx, cy) = (w / 2.0, h / 2.0);
-    let radius = h * 0.40;
-    let inside = |x: f32, y: f32| x * x + y * y < radius * radius;
-
-    // A few stars.
-    for row in 0..rows {
-        for col in 0..cols {
-            let n = mix(col, row);
-            if n.is_multiple_of(41) {
-                canvas.dot(
-                    (col * 2 + n / 7 % 2) as i32,
-                    (row * 4 + n / 11 % 4) as i32,
-                    Layer::Star,
-                );
-            }
-        }
-    }
-
-    let trace = |canvas: &mut Canvas, front: bool| {
-        for orbit in &ORBITS {
-            for step in 0..600 {
-                let t = step as f32 / 600.0 * std::f32::consts::TAU;
-                let (x, y, in_front) = orbit.at(t);
-                if in_front != front || (!front && inside(x, y)) {
-                    continue;
-                }
-                let layer = if front { Layer::Front } else { Layer::Back };
-                canvas.dot((cx + x).round() as i32, (cy + y).round() as i32, layer);
-            }
-        }
-    };
-    trace(&mut canvas, false);
-
-    // The planet: brightness from a light at the upper left, dithered.
-    let light = (
-        -0.55 + (aim.0 * 0.8 + 0.55) * glow,
-        -0.45 + (aim.1 * 0.8 + 0.45) * glow,
-        0.70 - 0.10 * glow,
-    );
-    for py in 0..(rows * 4) {
-        for px in 0..(cols * 2) {
-            let (x, y) = (px as f32 + 0.5 - cx, py as f32 + 0.5 - cy);
-            if !inside(x, y) {
-                continue;
-            }
-            let z = (radius * radius - x * x - y * y).sqrt();
-            let shade = ((x * light.0 + y * light.1 + z * light.2) / radius).clamp(0.0, 1.0);
-            let threshold = (BAYER[py % 4][px % 4] + 0.5) / 16.0;
-            canvas.clear(px as i32, py as i32);
-            if shade * 1.15 + 0.06 > threshold {
-                canvas.dot(px as i32, py as i32, Layer::Planet);
-            }
-        }
-    }
-    trace(&mut canvas, true);
-
-    // The electron.
-    for orbit in &ORBITS {
-        let t = angle + 0.9;
-        let (x, y, in_front) = orbit.at(t);
-        if !in_front && inside(x, y) {
-            continue;
-        }
-        for (dx, dy) in [
-            (0, 0),
-            (1, 0),
-            (-1, 0),
-            (0, 1),
-            (0, -1),
-            (1, 1),
-            (-1, -1),
-            (1, -1),
-            (-1, 1),
-        ] {
-            canvas.dot(
-                (cx + x).round() as i32 + dx,
-                (cy + y).round() as i32 + dy,
-                Layer::Electron,
-            );
-        }
-    }
-
-    (0..rows)
-        .map(|row| {
-            let spans: Vec<Span> = (0..cols)
-                .map(|col| {
-                    let cell = row * cols + col;
-                    let Some(layer) = canvas.layer[cell].filter(|_| canvas.bits[cell] != 0) else {
-                        return Span::raw(" ");
-                    };
-                    let color = match layer {
-                        Layer::Star => gray(70),
-                        Layer::Back => blend(gray(84), Color::Rgb(122, 74, 46), glow),
-                        Layer::Planet => {
-                            let (x, y) = (col as f32 * 2.0 + 1.0 - cx, row as f32 * 4.0 + 2.0 - cy);
-                            let z = (radius * radius - x * x - y * y).max(0.0).sqrt();
-                            let shade = ((x * light.0 + y * light.1 + z * light.2) / radius)
-                                .clamp(0.0, 1.0);
-                            gray(70 + (shade * 175.0) as u8)
-                        }
-                        Layer::Front => blend(gray(175), ACCENT, glow),
-                        Layer::Electron => blend(FG, ACCENT, glow),
-                    };
-                    let glyph =
-                        char::from_u32(0x2800 + u32::from(canvas.bits[cell])).unwrap_or(' ');
-                    Span::styled(glyph.to_string(), Style::new().fg(color))
-                })
-                .collect();
-            Line::from(spans)
-        })
-        .collect()
-}
-
 impl Menu {
-    pub fn new() -> Menu {
-        Menu::default()
+    pub fn new(logo: Logo) -> Menu {
+        Menu {
+            logo,
+            ..Menu::default()
+        }
     }
 
     /// One step of the animation. The glow and the light ease toward where the
@@ -312,7 +89,12 @@ impl Menu {
         if (goal - self.glow).abs() < 0.01 {
             self.glow = goal;
         }
+        if self.spin.held() {
+            // Held in the hand: it only follows the pointer.
+            return;
+        }
         self.angle = (self.angle + 0.042 + 0.058 * self.glow) % std::f32::consts::TAU;
+        self.spin.coast();
     }
 
     fn select(&mut self, index: usize) {
@@ -323,7 +105,7 @@ impl Menu {
         match ITEMS[self.selected] {
             Item::Browse => Action::Browse,
             Item::Here => Action::AnalyzeHere,
-            Item::Language => Action::SwitchLanguage,
+            Item::Settings => Action::Settings,
             Item::Quit => Action::Quit,
         }
     }
@@ -338,6 +120,7 @@ impl Menu {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => return Some(self.activate()),
             KeyCode::Char('b') => return Some(Action::Browse),
             KeyCode::Char('a') => return Some(Action::AnalyzeHere),
+            KeyCode::Char('s') => return Some(Action::Settings),
             KeyCode::Char('L') => return Some(Action::SwitchLanguage),
             _ => {}
         }
@@ -347,6 +130,10 @@ impl Menu {
     /// Click an item to select it and click it again to run it.
     pub fn handle_mouse(&mut self, kind: MouseEventKind, column: u16, row: u16) -> Option<Action> {
         let at = Position::new(column, row);
+        if self.logo.is_3d() && self.spin.handle_mouse(kind, at, self.logo_area) {
+            self.pointer = Some(at);
+            return None;
+        }
         match kind {
             MouseEventKind::Down(MouseButton::Left) if self.list_area.contains(at) => {
                 let index = usize::from(row - self.list_area.y);
@@ -386,13 +173,6 @@ fn shorten(text: &str, width: usize) -> String {
     format!("…{tail}")
 }
 
-fn language_name(lang: Lang) -> &'static str {
-    match lang {
-        Lang::En => "English",
-        Lang::PtBr => "Português",
-    }
-}
-
 pub fn render(frame: &mut Frame, menu: &mut Menu, lang: Lang, here: &str) {
     let t = lang.t();
     let area = frame.area();
@@ -411,7 +191,13 @@ pub fn render(frame: &mut Frame, menu: &mut Menu, lang: Lang, here: &str) {
 
     menu.logo_area =
         Rect::new(head.x + 1, head.y, head.width.saturating_sub(2), ART_ROWS).intersection(head);
-    let mut lines: Vec<Line> = art_lines(menu.logo_area, menu.glow, menu.aim, menu.angle);
+    let mut lines: Vec<Line> = menu.logo.lines(
+        menu.logo_area,
+        menu.glow,
+        menu.aim,
+        menu.angle,
+        menu.spin.turn,
+    );
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
         " agentq ",
@@ -443,9 +229,9 @@ pub fn render(frame: &mut Frame, menu: &mut Menu, lang: Lang, here: &str) {
             let (label, detail) = match item {
                 Item::Browse => (t.menu_browse.to_string(), t.menu_browse_hint.to_string()),
                 Item::Here => (t.menu_here.to_string(), shorten(here, room)),
-                Item::Language => (
-                    format!("{}: {}", t.menu_language, language_name(lang)),
-                    t.menu_language_hint.to_string(),
+                Item::Settings => (
+                    t.menu_settings.to_string(),
+                    t.menu_settings_hint.to_string(),
                 ),
                 Item::Quit => (t.menu_quit.to_string(), String::new()),
             };
@@ -471,7 +257,7 @@ pub fn render(frame: &mut Frame, menu: &mut Menu, lang: Lang, here: &str) {
             key_hints(&[
                 ("↑↓", t.menu_select),
                 ("Enter", t.menu_choose),
-                ("L", t.key_language),
+                ("shift+l", t.key_language),
                 ("q", t.key_quit),
             ]),
         ]),
@@ -497,19 +283,43 @@ mod tests {
     }
 
     #[test]
-    fn the_picture_has_the_size_it_says() {
-        let lines = art_lines(Rect::new(0, 0, 62, ART_ROWS), 0.0, (0.0, 0.0), 0.0);
-        assert_eq!(lines.len(), usize::from(ART_ROWS));
-        assert!(lines.iter().all(|l| l.spans.len() == 62));
+    fn every_logo_has_the_size_it_says() {
+        for logo in Logo::ALL {
+            let lines = logo.lines(
+                Rect::new(0, 0, 62, ART_ROWS),
+                0.0,
+                (0.0, 0.0),
+                0.0,
+                (0.0, 0.0),
+            );
+            assert_eq!(lines.len(), usize::from(ART_ROWS), "{}", logo.name());
+            assert!(lines.iter().all(|l| l.spans.len() == 62), "{}", logo.name());
+        }
+    }
+
+    #[test]
+    fn every_logo_is_drawn_and_moves() {
+        let area = Rect::new(0, 0, 62, ART_ROWS);
+        for logo in Logo::ALL {
+            let a = text(&logo.lines(area, 0.0, (0.0, 0.0), 0.0, (0.0, 0.0)));
+            let b = text(&logo.lines(area, 0.0, (0.0, 0.0), 1.3, (0.0, 0.0)));
+            assert!(
+                a.chars().any(|c| ('\u{2801}'..='\u{28ff}').contains(&c)),
+                "{}",
+                logo.name()
+            );
+            assert_ne!(a, b, "{}", logo.name());
+        }
     }
 
     #[test]
     fn the_planet_and_its_electron_are_drawn() {
-        let picture = text(&art_lines(
+        let picture = text(&Logo::Planet.lines(
             Rect::new(0, 0, 62, ART_ROWS),
             0.0,
             (0.0, 0.0),
             0.0,
+            (0.0, 0.0),
         ));
         assert!(
             picture
@@ -522,19 +332,19 @@ mod tests {
     #[test]
     fn the_electron_moves_with_the_ticks() {
         let area = Rect::new(5, 2, 62, ART_ROWS);
-        let mut menu = Menu::new();
+        let mut menu = Menu::new(Logo::Planet);
         menu.logo_area = area;
         menu.tick();
         assert!(menu.angle > 0.0);
         assert_ne!(
-            text(&art_lines(area, 0.0, (0.0, 0.0), 0.0)),
-            text(&art_lines(area, 0.0, (0.0, 0.0), 1.0))
+            text(&Logo::Planet.lines(area, 0.0, (0.0, 0.0), 0.0, (0.0, 0.0))),
+            text(&Logo::Planet.lines(area, 0.0, (0.0, 0.0), 1.0, (0.0, 0.0)))
         );
     }
 
     #[test]
     fn the_glow_rises_under_the_pointer_and_fades_slowly_after() {
-        let mut menu = Menu::new();
+        let mut menu = Menu::new(Logo::Planet);
         menu.logo_area = Rect::new(5, 2, 62, ART_ROWS);
         menu.pointer = Some(Position::new(20, 5));
         for _ in 0..80 {
@@ -555,7 +365,8 @@ mod tests {
     fn the_orbit_is_orange_only_with_a_glow() {
         let area = Rect::new(5, 2, 62, ART_ROWS);
         let accent = |glow| {
-            art_lines(area, glow, (0.0, 0.0), 0.0)
+            Logo::Planet
+                .lines(area, glow, (0.0, 0.0), 0.0, (0.0, 0.0))
                 .iter()
                 .flat_map(|l| l.spans.iter().map(|s| s.style.fg))
                 .filter(|c| *c == Some(ACCENT))
@@ -563,5 +374,51 @@ mod tests {
         };
         assert_eq!(accent(0.0), 0);
         assert!(accent(1.0) > 0);
+    }
+
+    #[test]
+    fn dragging_the_logo_turns_it_and_it_keeps_going_a_little() {
+        let mut menu = Menu::new(Logo::Lock);
+        menu.logo_area = Rect::new(5, 2, 62, ART_ROWS);
+        let down = MouseEventKind::Down(MouseButton::Left);
+        let drag = MouseEventKind::Drag(MouseButton::Left);
+        menu.handle_mouse(down, 30, 5);
+        menu.handle_mouse(drag, 40, 7);
+        assert!(
+            menu.spin.turn.0 > 1.0 && menu.spin.turn.1 > 0.3,
+            "{:?}",
+            menu.spin.turn
+        );
+        // Held, the logo does not move by itself.
+        let held = (menu.angle, menu.spin.turn);
+        menu.tick();
+        assert_eq!((menu.angle, menu.spin.turn), held);
+        menu.handle_mouse(MouseEventKind::Up(MouseButton::Left), 40, 7);
+        menu.tick();
+        assert!(
+            menu.spin.turn.0 > held.1.0,
+            "it carries on after being let go"
+        );
+        for _ in 0..200 {
+            menu.tick();
+        }
+        assert!(menu.spin.momentum.0.abs() < 0.001);
+    }
+
+    #[test]
+    fn the_flat_logo_cannot_be_dragged() {
+        let mut menu = Menu::new(Logo::Planet);
+        menu.logo_area = Rect::new(5, 2, 62, ART_ROWS);
+        menu.handle_mouse(MouseEventKind::Down(MouseButton::Left), 30, 5);
+        assert!(menu.spin.drag.is_none());
+    }
+
+    #[test]
+    fn turning_by_hand_changes_the_picture() {
+        let area = Rect::new(0, 0, 62, ART_ROWS);
+        assert_ne!(
+            text(&Logo::Key.lines(area, 0.0, (0.0, 0.0), 0.0, (0.0, 0.0))),
+            text(&Logo::Key.lines(area, 0.0, (0.0, 0.0), 0.0, (1.0, 0.6)))
+        );
     }
 }

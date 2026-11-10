@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod analyzer;
 pub mod assess;
+pub mod config;
 pub mod detect;
 pub mod eval;
 pub mod finding;

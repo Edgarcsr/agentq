@@ -106,9 +106,11 @@ The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) ha
 - **Overview**: files scanned, how many uses are quantum-vulnerable, weakened or already safe, a chart by urgency, the most used algorithms, the files to review first and the language share. Click an urgency to jump to its first finding.
 - **Findings**: the list on the left, most urgent first, and the selected one on the right: what the code does, why it is a risk, and what to replace it with.
 
+With a [Nerd Font](https://www.nerdfonts.com) in the terminal, `--nerd-font` (or `AGENTQ_NERD_FONT=1`) adds icons to the folder browser: Node projects in green, git repositories in red, other folders in gray.
+
 Run `cargo run -- --tui` **without a path** to pick the project in a folder browser (folders with a `package.json` or a `.git` are marked); press `b` at any time to choose another one.
 
-Keys: `L` switch the language, `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
+Keys: `shift+l` switch the language, `↑↓`/`jk` select, `PgUp`/`PgDn` scroll the details, `s` hide safe uses, `c` cycle the minimum confidence, `r` scan again, `b` browse for another project, `?` help, `q` quit. The mouse works too: click tabs and findings, use the wheel to scroll, and in the browser click a folder once to select it and again to open it.
 
 Example, scanning a test fixture:
 
@@ -143,7 +145,7 @@ The interface is structured like a [Bubble Tea](https://github.com/charmbracelet
 
 ### Language
 
-The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese), and is English when it is neither. In the terminal interface, `L` switches it on the fly.
+The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese), and is English when it is neither. In the terminal interface, `shift+l` switches it on the fly.
 
 ```sh
 cargo run -- samples/node-shop --lang pt-BR
