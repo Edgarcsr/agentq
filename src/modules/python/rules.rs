@@ -49,8 +49,12 @@ fn ec_keygen(library: &'static str, key_size: Option<u32>) -> Detection {
 }
 
 fn hash(library: &'static str, name: &str) -> Vec<Detection> {
+    named_hash(library, name, Purpose::Hash)
+}
+
+fn named_hash(library: &'static str, name: &str, purpose: Purpose) -> Vec<Detection> {
     names::hash(name)
-        .map(|id| detection(library, id, Purpose::Hash, None))
+        .map(|id| detection(library, id, purpose, None))
         .into_iter()
         .collect()
 }
@@ -104,12 +108,45 @@ pub fn detect(qualified: &str, args: &Args) -> Vec<Detection> {
     }
     if let Some(name) = qualified.strip_prefix("hashlib.") {
         return match name {
-            "new" | "pbkdf2_hmac" => args
+            "new" => args
                 .get(0, "name")
                 .as_str()
                 .map_or(vec![], |algorithm| hash("hashlib", algorithm)),
+            "pbkdf2_hmac" => args
+                .get(0, "hash_name")
+                .as_str()
+                .map_or(vec![], |algorithm| {
+                    named_hash("hashlib", algorithm, Purpose::KeyDerivation)
+                }),
             _ => hash("hashlib", name),
         };
+    }
+    if let Some(name) = qualified.strip_prefix("cryptography.hazmat.primitives.kdf.hkdf.") {
+        return match name {
+            "HKDF" | "HKDFExpand" => args
+                .get(0, "algorithm")
+                .as_str()
+                .map_or(vec![], |algorithm| {
+                    named_hash(CRYPTOGRAPHY, algorithm, Purpose::KeyDerivation)
+                }),
+            _ => vec![],
+        };
+    }
+    if qualified == "cryptography.hazmat.primitives.hmac.HMAC" {
+        return args
+            .get(1, "algorithm")
+            .as_str()
+            .map_or(vec![], |algorithm| {
+                named_hash(CRYPTOGRAPHY, algorithm, Purpose::Mac)
+            });
+    }
+    if matches!(qualified, "hmac.new" | "hmac.digest" | "hmac.HMAC") {
+        return args
+            .get(2, "digestmod")
+            .as_str()
+            .map_or(vec![], |algorithm| {
+                named_hash("hmac", algorithm, Purpose::Mac)
+            });
     }
     if let Some(rest) = qualified.strip_prefix("Crypto.Hash.") {
         return match rest.split_once('.') {
