@@ -77,13 +77,13 @@ H1 tem evidência preliminar em corpus sintético ([6.1](#61-corpus-sintético))
 
 ### 1.5 Delimitação
 
-O trabalho trata de **código-fonte de aplicações**. A ordem de implementação é JavaScript/TypeScript (Node.js), por ser a linguagem que o integrante responsável pela implementação inicial mais conhece, e depois Python, Java e Go, cujas gramáticas já estão ligadas ao parser. Um analisador de Python começou a ser escrito e está guardado num `git stash`. Ficam fora: configuração de TLS e infraestrutura de rede, certificados e chaves em arquivo, dependências transitivas (`node_modules` é ignorado), binários, e os requisitos de governança levantados nas histórias de usuário (visibilidade centralizada, conformidade, rastreabilidade de decisões e priorização por criticidade, US01 a US04). Só a US05, do desenvolvedor, é atendida. Hoje Python, Java e Go são listados pelo scanner, mas ainda não analisados.
+O trabalho trata de **código-fonte de aplicações**. A implementação começou por JavaScript/TypeScript (Node.js) e agora inclui Python; Java e Go continuam planejados, embora suas gramáticas já estejam ligadas ao parser. Ficam fora: configuração de TLS e infraestrutura de rede, certificados e chaves em arquivo, dependências transitivas (`node_modules` é ignorado), binários, e os requisitos de governança levantados nas histórias de usuário (visibilidade centralizada, conformidade, rastreabilidade de decisões e priorização por criticidade, US01 a US04). Só a US05, do desenvolvedor, é atendida.
 
 A ferramenta também não é um detector de mau uso clássico de criptografia (IV fixo, modo ECB, senha com hash rápido). Esse é outro problema, com literatura própria ([seção 3](#3-trabalhos-relacionados)).
 
 ### 1.6 Contribuições pretendidas
 
-- Um analisador de código aberto com núcleo comum (base de conhecimento, inferência de propósito, avaliação e relatório) e uma trilha por linguagem, começando por JavaScript/TypeScript, que as ferramentas de inventário mais conhecidas cobrem pouco.
+- Um analisador de código aberto com núcleo comum (base de conhecimento, inferência de propósito, avaliação e relatório) e trilhas por linguagem, inicialmente JavaScript/TypeScript e Python.
 - Um mecanismo de inferência de propósito que liga o achado à recomendação.
 - Um corpus anotado e um harness de avaliação reprodutível (`cargo run --bin eval`).
 
@@ -205,7 +205,7 @@ Pesquisa aplicada, no formato de *Design Science Research* (Hevner et al., 2004)
 | Levantamento de requisitos (histórias de usuário) | Feito; só a US05 entrou no escopo |
 | Base de conhecimento de algoritmos | Feito (28 algoritmos) |
 | Detecção em JS/TS | Feito (16 bibliotecas) |
-| Detecção em Python | Iniciada (analisador no `git stash`) |
+| Detecção em Python | Implementada no núcleo comum; avaliação sintética inicial |
 | Detecção em Java e Go | **Pendente** (gramáticas ligadas ao parser) |
 | Inferência de propósito | Feito, por variável e, na falta dela, por arquivo |
 | Avaliação e recomendação | Feito |
@@ -220,6 +220,8 @@ Pesquisa aplicada, no formato de *Design Science Research* (Hevner et al., 2004)
 **Métricas.** Um uso é a tripla (arquivo, linha, algoritmo). Precisão = VP / (VP + FP); recall = VP / (VP + FN); F1 é a média harmônica. O acerto de propósito é calculado sobre os usos localizados corretamente.
 
 **Corpus sintético** (`eval/corpus/node`). Doze arquivos com marcadores `// @expect md5:hash`. Linhas sem marcador não devem gerar achado. Serve para detectar regressão, não para estimar desempenho.
+
+**Piloto Python** (`eval/corpus/python`). Três arquivos e dois usos anotados com `# @expect`; compara o analisador sintático, a busca por palavras e o scanner léxico simples do PR antigo. É apenas um teste do protocolo e da integração, não uma estimativa de desempenho.
 
 **Sondagem fora do corpus** (`eval/probe/node`). Padrões realistas escritos sem olhar as regras da ferramenta, para estimar o que o corpus não mostra.
 
@@ -249,7 +251,7 @@ O protocolo é o mesmo para todas as linguagens; muda só a amostra e os baselin
 
 ### 5.1 Arquitetura
 
-Cada linguagem é uma trilha separada (um analisador atrás do mesmo trait `Analyzer`) que alimenta uma etapa comum de avaliação e relatório. Só a trilha JS/TS existe hoje.
+Cada linguagem é uma trilha separada (um analisador atrás do mesmo trait `Analyzer`) que alimenta uma etapa comum de avaliação e relatório. As trilhas JS/TS e Python estão implementadas; Java e Go ainda não.
 
 ```mermaid
 flowchart TD
@@ -257,7 +259,8 @@ flowchart TD
     scan --> route{"Linguagem de<br/>cada arquivo"}
 
     route -->|"JS / TS<br/>.js .jsx .mjs .cjs .ts .tsx .mts .cts"| parse
-    route -->|"Python, Java, Go"| pending["Só listados<br/>analisadores não construídos"]
+    route -->|"Python<br/>.py"| pyparse["Parser<br/>tree-sitter Python"]
+    route -->|"Java, Go"| pending["Só listados<br/>analisadores não construídos"]
 
     subgraph jstrack ["Trilha JS/TS"]
         direction TB
@@ -267,12 +270,20 @@ flowchart TD
         raw --> infer["Inferência de propósito<br/>chaves RSA/EC: outros achados e pistas no arquivo"]
     end
 
+      subgraph pytrack["Trilha Python"]
+        direction TB
+        pyparse --> pybind["Bindings<br/>resolve imports, apelidos, constantes e atribuições"]
+        pybind --> pyrules["Regras por biblioteca<br/>cryptography, PyCryptodome, PyNaCl,<br/>rsa, ecdsa, PyJWT, hashlib"]
+        pyrules --> pyfindings["Achados comuns<br/>algoritmo, propósito, tamanho e confiança"]
+      end
+
     infer --> assess["Avaliação<br/>base de conhecimento: risco quântico, urgência,<br/>alternativas adequadas ao propósito"]
+      pyfindings --> assess
     assess --> filter["Filtros<br/>--min-confidence, --hide-safe"]
     filter --> report["Relatório, mais urgente primeiro<br/>texto, JSON ou Markdown"]
     pending --> report
 
-    corpus[("Corpus anotado<br/>eval/corpus/node")] -.->|"cargo run --bin eval"| metrics["Precisão, recall, F1<br/>contra busca por palavras-chave"]
+    corpus[("Corpora anotados<br/>eval/corpus/node e python")] -.->|"cargo run --bin eval"| metrics["Precisão, recall, F1<br/>contra busca e baseline léxico"]
     infer -.-> metrics
 ```
 
@@ -281,6 +292,8 @@ flowchart TD
 Cada arquivo é analisado com [tree-sitter](https://tree-sitter.github.io). O componente central, `Bindings`, liga cada nome ao módulo de origem, seguindo `require`, `import`, `import()`, desestruturação e apelidos. Um avaliador de valores lê argumentos literais, constantes, concatenação, templates e propriedades de objetos constantes. As regras ficam em Rust, uma por biblioteca.
 
 Bibliotecas reconhecidas: `crypto` do Node.js, Web Crypto (`crypto.subtle`), `jsonwebtoken`, `jose`, `node-forge`, `node-rsa`, `elliptic`, `tweetnacl`, `@noble/curves`, `@noble/ed25519`, `@noble/secp256k1`, `crypto-js`, `jsrsasign`, `openpgp`, `libsodium` e o plugin `jwt` do Better Auth. Usos pós-quânticos (`ml-kem`, `ml-dsa`, `slh-dsa` em `node:crypto` e `@noble/post-quantum`) são reportados como seguros.
+
+Em Python, a trilha resolve importações e apelidos antes de aplicar regras para `cryptography`, PyCryptodome, PyNaCl, `rsa`, `ecdsa`, PyJWT e `hashlib`. O scanner léxico da implementação anterior não participa da análise do produto; está isolado em `src/eval.rs` como baseline.
 
 Quando uma API conhecida recebe um nome de algoritmo que não está na base (`createCipheriv('camellia-256-cbc', ...)`), o uso não é descartado: aparece numa lista à parte, "fora da base de conhecimento", nos relatórios em texto, Markdown e JSON. A interface de terminal ainda não mostra essa lista.
 
@@ -292,6 +305,8 @@ Os propósitos são troca de chaves, cifragem, assinatura, hash, autenticação 
 
 1. **Por variável.** A ferramenta registra as variáveis que recebem a chave (`const { privateKey } = generateKeyPairSync('rsa')`) e procura as chamadas que as recebem, em qualquer biblioteca: `sign(null, dados, privateKey)`, `publicEncrypt(publicKey, ...)`, `jwt.sign(payload, privateKey, { algorithm: 'RS256' })`. A confiança do achado fica **média**.
 2. **Por arquivo.** Se nenhuma chamada recebe a chave, valem as evidências da mesma biblioteca no arquivo que não estejam explicadas pela variável de outra chave. É um palpite, e a confiança cai para **baixa**; `--min-confidence medium` o exclui.
+
+Na trilha Python, a inferência é por variável: segue atribuições simples, desempacotamento de chaves e aliases diretos de `public_key()`, e invalida o vínculo quando a variável é reatribuída. Não usa o palpite por arquivo.
 
 Nos dois níveis o propósito só é atribuído quando todas as evidências concordam. Duas chaves RSA no mesmo arquivo, uma que assina e outra que cifra, recebem propósitos diferentes. A ligação é pelo nome da variável dentro do arquivo: não segue a chave por parâmetros de função, campos de objeto ou outros arquivos.
 
@@ -460,6 +475,18 @@ As duas últimas linhas mostram que o palpite por arquivo do agentq também afir
 
 **Leitura.** No corpus do agentq, os dois detectam o mesmo número de usos, e o agentq ganha em família, propósito e falsos positivos. No corpus do qScan ([6.5](#65-corpus-independente-do-qscan)), o qScan ganha com folga em cobertura. Cada corpus foi escrito por quem fez a ferramenta, e cada ferramenta vai melhor no seu, o que é exatamente o viés que a avaliação em repositórios reais, com anotação independente, precisa remover. Mesmo assim, os dois resultados apontam na direção da hipótese da seção 3.3: o léxico cobre mais, e o sintático erra menos sobre o que encontra e sobre para que aquilo serve.
 
+### 6.7 Piloto sintético da trilha Python
+
+O corpus [`eval/corpus/python`](../eval/corpus/python) tem três arquivos e dois usos anotados. Ele exercita uma operação por um alias retornado por `public_key()`, uma reatribuição e uma chamada de API mencionada apenas dentro de uma string. O relatório [`eval/results/python.md`](../eval/results/python.md) compara os três detectores:
+
+| Detector | Precisão | Recall | F1 |
+| --- | ---: | ---: | ---: |
+| agentq sintático | 100,0% | 100,0% | 100,0% |
+| baseline léxico legado | 66,7% | 100,0% | 80,0% |
+| busca por palavras | 40,0% | 100,0% | 57,1% |
+
+Esse corpus é uma checagem de integração escrita pelos autores, não uma avaliação externa nem evidência de desempenho em projetos Python reais. O código léxico fica restrito ao harness de avaliação e não é registrado como analisador do produto.
+
 ## 7. Discussão e ameaças à validade
 
 **Validade de construção.**
@@ -476,7 +503,7 @@ As duas últimas linhas mostram que o palpite por arquivo do agentq também afir
 
 **Validade externa.**
 
-- Uma única linguagem implementada, 109 linhas de código sintético, nenhum repositório real. Nada do que foi medido em JS/TS vale para as outras linguagens: cada trilha precisa da própria avaliação.
+- Duas linguagens implementadas, mas só 109 linhas de corpus JS/TS e 11 linhas no piloto Python, tudo sintético; nenhum repositório real. Os resultados de cada trilha precisam ser medidos separadamente.
 - Frameworks que escondem a criptografia (bibliotecas de autenticação, ORMs, SDKs de nuvem) estão quase ausentes: só o Better Auth tem regra.
 
 **Validade de conclusão.**
@@ -486,7 +513,7 @@ As duas últimas linhas mostram que o palpite por arquivo do agentq também afir
 **Limitações da ferramenta.**
 
 - A resolução de nomes é local ao arquivo e não segue valores por parâmetros, campos de objeto ou retornos de função.
-- A inferência de propósito segue a variável só pelo nome e dentro do arquivo; o segundo nível, por arquivo, é um palpite.
+- Em JavaScript, a inferência por variável e por arquivo ainda depende de nomes no arquivo. Em Python, atribuições diretas, desempacotamento e aliases de `public_key()` são seguidos com invalidação por reatribuição; parâmetros, campos de objeto, transformações arbitrárias e outros arquivos não são.
 - Algoritmos fora da base são listados à parte nos relatórios, mas não na interface de terminal, e só quando o nome é um literal.
 - O modelo de urgência ignora o contexto: tempo de vida do dado, exposição do sistema e os prazos do NIST IR 8547. Uma assinatura de firmware com validade de vinte anos recebe a mesma urgência de um token que expira em uma hora.
 - Um resultado sem achados não significa ausência de criptografia vulnerável: TLS, certificados, dependências e outras linguagens não são vistos.
@@ -501,7 +528,7 @@ Em ordem de prioridade. As quatro primeiras decidem se o trabalho se sustenta.
 4. **Enunciar a contribuição e o plano de linguagens** como em [3.3](#33-posicionamento): comparação entre análise léxica e sintática com inferência de propósito, decidindo agora até onde as trilhas de Python, Java e Go vão.
 5. **Ablação da inferência de propósito:** sem inferência, por arquivo e por variável, em código real.
 6. **Saída em CBOM (CycloneDX 1.6) e SARIF.** Custa pouco, é o que as outras ferramentas emitem, é a lacuna do CBOMkit em JS/TS e é o que permite comparar resultados entre ferramentas de forma automática nas outras linguagens.
-7. **Retomar Python** a partir do `git stash`, já no formato novo do núcleo (evidências de propósito por variável, propósitos MAC e derivação de chaves, lista de algoritmos fora da base).
+7. **Ampliar e avaliar Python** além do piloto: revisar as regras com anotação independente, cobrir fluxos por parâmetros e objetos, e executar a trilha em repositórios reais separados dos casos usados para ajuste.
 8. **Buracos de detecção que restam em JS/TS:** algoritmo em campo de objeto, em ternário ou vindo de outro arquivo; `crypto.sign` com chave de tipo desconhecido; lista "fora da base" na interface de terminal.
 9. **Alinhar escopo e requisitos.** As histórias de usuário falam em governança, conformidade e priorização por criticidade; a ferramenta atende uma de cinco. Dizer isso na delimitação, como feito em [1.5](#15-delimitação).
 10. **Equilibrar o esforço.** A interface de terminal tem cerca de 5.100 linhas, mais que todo o resto do código somado. Para a banca, o peso está na análise e na avaliação.
@@ -512,7 +539,7 @@ Já tratados nesta versão: separação entre fraqueza clássica e quântica, pr
 
 ## 9. Conclusão parcial e trabalhos futuros
 
-O protótipo executa o fluxo inteiro para JavaScript/TypeScript, a primeira das linguagens previstas, e, em código sintético, supera com folga a busca textual. A evidência disponível sustenta apenas isso. A sondagem da seção 6.2 indica que a cobertura em código real é bem menor que a do corpus, e a pergunta de pesquisa continua em aberto até a avaliação em repositórios reais e a comparação com outras ferramentas.
+O protótipo executa o fluxo inteiro para JavaScript/TypeScript e Python. Os corpora sintéticos mostram que o harness compara busca textual, análise léxica e análise sintática, mas não permitem concluir desempenho em código real. A sondagem da seção 6.2 indica que a cobertura em código real pode ser bem menor que a do corpus, e a pergunta de pesquisa continua em aberto até avaliações independentes em repositórios reais e comparação com outras ferramentas.
 
 Trabalhos futuros, depois das lacunas acima: as trilhas de linguagem que não couberem no prazo; análise de configuração de TLS, certificados e dependências; resolução de nomes entre arquivos; e um modelo de urgência que considere o tempo de vida do dado e os prazos regulatórios.
 

@@ -6,7 +6,7 @@
 
 A proposed tool for analyzing source code, identifying uses of cryptography that may be vulnerable to quantum computing, and recommending post-quantum alternatives suited to the system's context.
 
-> **Status:** this project is in the concept and scope definition stage for an undergraduate final project (TCC, in Brazil). Source scanning and cryptography detection for JavaScript/TypeScript are implemented (see [Current prototype](#current-prototype)); the remaining features described below are planned. The draft of the thesis, in Portuguese, is in [`docs/tcc.md`](docs/tcc.md): research question, related tools, evaluation and open gaps.
+> **Status:** this prototype implements source scanning, cryptography detection, risk assessment, and reports for JavaScript/TypeScript and Python. Evaluation on real repositories, Java and Go analyzers, and the final thesis remain in progress. The draft, in Portuguese, is in [`docs/tcc.md`](docs/tcc.md).
 
 # Motivation
 
@@ -22,17 +22,17 @@ Sufficiently powerful quantum computers could compromise public-key cryptographi
 
 ## Current prototype
 
-The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)** projects. Python, Java, and Go files are listed by the scanner but not analyzed yet.
+The prototype runs the whole workflow for **JavaScript, TypeScript (Node.js), and Python** projects. Java and Go files are listed by the scanner but not analyzed yet.
 
 1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages.
-2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
-3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
+2. **Detect.** Parses JS/TS and Python with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when available. The JS/TS analyzer follows imports, destructuring, aliases, constants, string concatenation, and template literals. The Python analyzer resolves imports and aliases and applies rules for `cryptography`, PyCryptodome, PyNaCl, `rsa`, `ecdsa`, PyJWT, and `hashlib`; comments and strings are not treated as calls.
+3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. Purpose inference follows uses of the same key variable, including direct assignments, tuple unpacking, and `public_key()` aliases in Python. Reassignment invalidates the earlier binding. Confidence drops to `medium` for variable-linked inferences. Purposes include key exchange, encryption, signature, hash, message authentication (HMAC), and key derivation (PBKDF2, HKDF).
 4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
 5. **Report.** Text, JSON, or Markdown, most urgent first.
 
 ### How it works
 
-Each language is a separate track (an analyzer behind the same `Analyzer` trait) that feeds a shared assessment and report stage. Only the JS/TS track exists today.
+Each language is a separate track (an analyzer behind the same `Analyzer` trait) that feeds a shared assessment and report stage. JS/TS and Python analyzers are implemented; Java and Go remain planned.
 
 ```mermaid
 flowchart TD
@@ -40,7 +40,8 @@ flowchart TD
     scan --> route{"Language of<br/>each file"}
 
     route -->|"JS / TS<br/>.js .jsx .mjs .cjs .ts .tsx .mts .cts"| parse
-    route -->|"Python, Java, Go"| pending["Show as <br/>'analyzers not built yet'"]
+    route -->|"Python<br/>.py"| pyparse["Parse<br/>tree-sitter Python"]
+    route -->|"Java, Go"| pending["Show as <br/>'analyzers not built yet'"]
 
     subgraph jstrack ["JS/TS track"]
         direction TB
@@ -50,12 +51,20 @@ flowchart TD
         raw --> infer["Infer purpose<br/>RSA/EC keys: the calls that receive the key variable,<br/>else a low-confidence guess from the file"]
     end
 
+      subgraph pytrack["Python track"]
+        direction TB
+        pyparse --> pybind["Bindings<br/>resolve imports, aliases, constants and key assignments"]
+        pybind --> pyrules["Rules per library<br/>cryptography, PyCryptodome, PyNaCl,<br/>rsa, ecdsa, PyJWT, hashlib"]
+        pyrules --> pyfindings["Shared findings<br/>algorithm, purpose, size and confidence"]
+      end
+
     infer --> assess["Assess<br/>knowledge base: quantum risk, urgency,<br/>alternatives that fit the purpose"]
+      pyfindings --> assess
     assess --> filter["Filters<br/>--min-confidence, --hide-safe"]
     filter --> report["Report, most urgent first<br/>text, JSON or Markdown"]
     pending --> report
 
-    corpus[("Annotated corpus<br/>eval/corpus/node")] -.->|"cargo run --bin eval"| metrics["Precision, recall, F1<br/>vs keyword search"]
+    corpus[("Annotated corpora<br/>eval/corpus/node and python")] -.->|"cargo run --bin eval"| metrics["Precision, recall, F1<br/>vs keyword and lexical baselines"]
     infer -.-> metrics
 ```
 
@@ -123,23 +132,30 @@ JSON output keeps its field names and machine values (`urgency`, `purpose`, ...)
 
 ### Evaluation
 
-`cargo run --bin eval` scores agenq's semantic analyser on an annotated corpus (`eval/corpus/node`, markers like `// @expect md5:hash`) and compares it with a keyword search (the way a developer would use `grep`). Current results, also saved in [`eval/results/node.md`](eval/results/node.md):
+`cargo run --bin eval` scores agentq on the annotated Node corpus (`eval/corpus/node`, markers like `// @expect md5:hash`) and compares it with keyword search. Run the separate Python pilot with `cargo run --bin eval -- eval/corpus/python`; Python markers use `# @expect`. Reports are saved in [`eval/results`](eval/results):
 
 | | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: |
 | agentq | 100.0% | 95.9% | 97.9% |
 | keyword search | 67.4% | 63.3% | 65.3% |
 
-The corpus was written by the authors of the analyzer, so these numbers show regressions and the gap to a naive search, not performance on unseen code. Validation on real repositories is still to do.
+The Python corpus has three synthetic files and two annotated uses. Its report compares the semantic analyzer, keyword search, and the legacy line-based Python scanner kept only as an evaluation baseline:
+
+| Python pilot | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: |
+| agentq | 100.0% | 100.0% | 100.0% |
+| Python lexical baseline | 66.7% | 100.0% | 80.0% |
+| keyword search | 40.0% | 100.0% | 57.1% |
+
+These tiny, author-written corpora are regression checks, not evidence of performance on unseen or real-world code. The Python lexical scanner is not part of product analysis. Validation on real repositories is still to do.
 
 agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap is scope (TLS configuration, SSH keys, dependency manifests). On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
 
 ### Known limitations
 
-- Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
-- Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
-- Purpose inference follows the key by variable name within one file; it does not follow it through function parameters, object fields or other files.
-- Only JavaScript and TypeScript are analyzed.
+- Name resolution is file-local; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
+- Python purpose inference follows direct assignments, tuple unpacking, and `public_key()` aliases, but not function parameters, object fields, arbitrary transformations, or other files.
+- JavaScript, TypeScript, and Python are analyzed; Java and Go are not.
 
 ## Next steps
 
@@ -152,7 +168,8 @@ agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools),
 - [x] Evaluate the prototype on an annotated synthetic corpus.
 - [ ] Evaluate it on real open-source Node repositories, with manual validation.
 - [ ] Compare it with existing tools on real repositories (first runs against qScan in [`eval/external`](eval/external)).
-- [ ] Add analyzers for Python, Java, and Go.
+- [x] Add the Python analyzer to the shared analyzer, assessment, and report pipeline.
+- [ ] Add analyzers for Java and Go.
 - [ ] Document the results, limitations, and opportunities for future development.
 
 ## Team

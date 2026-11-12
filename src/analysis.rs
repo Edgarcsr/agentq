@@ -5,6 +5,7 @@ use crate::finding::Finding;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
 use crate::modules::javascript::JavaScriptAnalyzer;
+use crate::modules::python::PythonAnalyzer;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +13,8 @@ use std::path::{Path, PathBuf};
 fn analyzer_for(language: Language) -> Option<&'static dyn Analyzer> {
     match language {
         Language::JavaScriptTypeScript => Some(&JavaScriptAnalyzer),
-        Language::Python | Language::Java | Language::Go => None,
+        Language::Python => Some(&PythonAnalyzer),
+        Language::Java | Language::Go => None,
     }
 }
 
