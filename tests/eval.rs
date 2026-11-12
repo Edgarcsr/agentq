@@ -5,6 +5,10 @@ fn corpus() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("eval/corpus/node")
 }
 
+fn python_corpus() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("eval/corpus/python")
+}
+
 /// Regression guard for the quality measured on the annotated Node corpus.
 /// If the analyzer gets better, raise the thresholds; if it gets worse, fix it.
 #[test]
@@ -46,4 +50,24 @@ fn node_corpus_purposes_are_mostly_right() {
     let evaluation = evaluate(&corpus());
     assert!(evaluation.purpose_total >= 40);
     assert!(evaluation.purpose_correct * 100 >= evaluation.purpose_total * 90);
+}
+
+#[test]
+fn python_corpus_compares_semantic_and_lexical_detection() {
+    let evaluation = evaluate(&python_corpus());
+    assert_eq!(evaluation.files, 3);
+    assert_eq!(evaluation.expected, 2);
+    assert!(evaluation.tool.spurious.is_empty());
+    assert_eq!(evaluation.tool.overall.precision(), Some(1.0));
+    assert_eq!(evaluation.tool.overall.recall(), Some(1.0));
+
+    let lexical = evaluation.python_lexical.expect("Python lexical baseline");
+    assert_eq!(lexical.overall.true_positives, 2);
+    assert_eq!(lexical.overall.false_negatives, 0);
+    assert_eq!(lexical.overall.false_positives, 1);
+    assert!(
+        lexical
+            .spurious
+            .contains(&("lookalike.py".into(), 1, "rsa".into()))
+    );
 }

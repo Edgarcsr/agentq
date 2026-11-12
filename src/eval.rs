@@ -37,20 +37,30 @@ pub struct Expectation {
 pub type Hit = (String, usize, String);
 
 const MARKER: &str = "// @expect";
+const PYTHON_MARKER: &str = "# @expect";
 
 /// Removes the annotation from a line so it cannot influence a tool.
 pub fn strip_marker(line: &str) -> &str {
-    line.find(MARKER).map_or(line, |index| &line[..index])
+    [MARKER, PYTHON_MARKER]
+        .into_iter()
+        .filter_map(|marker| line.find(marker))
+        .min()
+        .map_or(line, |index| &line[..index])
 }
 
 /// Expectations declared in the markers of `source`, which belongs to `file`.
 pub fn parse_expectations(file: &str, source: &str) -> Vec<Expectation> {
     let mut expectations = Vec::new();
+    let marker = if file.ends_with(".py") {
+        PYTHON_MARKER
+    } else {
+        MARKER
+    };
     for (index, line) in source.lines().enumerate() {
-        let Some(position) = line.find(MARKER) else {
+        let Some(position) = line.find(marker) else {
             continue;
         };
-        for item in line[position + MARKER.len()..].split(',') {
+        for item in line[position + marker.len()..].split(',') {
             let (algorithm, purpose) = item.trim().split_once(':').unwrap_or((item.trim(), ""));
             if algorithm.is_empty() {
                 continue;
@@ -101,6 +111,117 @@ pub fn keyword_baseline(file: &str, source: &str) -> BTreeSet<Hit> {
         }
     }
     hits
+}
+
+struct LexicalRule {
+    pattern: &'static str,
+    algorithm: &'static str,
+}
+
+const PYTHON_LEXICAL_RULES: &[LexicalRule] = &[
+    LexicalRule {
+        pattern: "rsa.generate_private_key(",
+        algorithm: "rsa",
+    },
+    LexicalRule {
+        pattern: "ec.generate_private_key(",
+        algorithm: "ecdsa",
+    },
+    LexicalRule {
+        pattern: "dh.generate_parameters(",
+        algorithm: "dh",
+    },
+    LexicalRule {
+        pattern: "RSA.generate(",
+        algorithm: "rsa",
+    },
+    LexicalRule {
+        pattern: "ECC.generate(",
+        algorithm: "ecdsa",
+    },
+    LexicalRule {
+        pattern: "DSA.generate(",
+        algorithm: "dsa",
+    },
+];
+
+const PYTHON_OPERATIONS: &[(&str, &str)] = &[
+    (".sign(", "signature"),
+    (".verify(", "signature"),
+    (".exchange(", "key_exchange"),
+    (".encrypt(", "encryption"),
+    (".decrypt(", "encryption"),
+];
+
+/// Legacy line-based Python detection, retained only as an evaluation baseline.
+pub fn lexical_python_baseline(file: &str, source: &str) -> BTreeSet<Hit> {
+    let mut hits = BTreeSet::new();
+    let mut tracked = BTreeMap::new();
+
+    for (index, raw_line) in source.lines().enumerate() {
+        let line = strip_marker(raw_line);
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let has_api = PYTHON_LEXICAL_RULES
+            .iter()
+            .any(|rule| line.contains(rule.pattern));
+        let target = python_assignment_target(line);
+        if let Some(target) = target
+            && !has_api
+        {
+            tracked.remove(target);
+        }
+
+        for rule in PYTHON_LEXICAL_RULES {
+            if line.contains(rule.pattern) {
+                hits.insert((file.to_string(), index + 1, rule.algorithm.to_string()));
+                if let Some(target) = target {
+                    tracked.insert(target.to_string(), rule.algorithm);
+                }
+            }
+        }
+
+        for (variable, algorithm) in &tracked {
+            for (method, purpose) in PYTHON_OPERATIONS {
+                if !python_method_call(line, variable, method) {
+                    continue;
+                }
+                let algorithm = match (*purpose, *algorithm) {
+                    ("signature", "rsa" | "ecdsa" | "dsa") => *algorithm,
+                    ("key_exchange", "dh") => "dh",
+                    ("key_exchange", "ecdsa") => "ecdh",
+                    ("encryption", "rsa") => "rsa",
+                    _ => continue,
+                };
+                hits.insert((file.to_string(), index + 1, algorithm.to_string()));
+            }
+        }
+    }
+    hits
+}
+
+fn python_assignment_target(line: &str) -> Option<&str> {
+    let (target, _) = line.split_once('=')?;
+    let target = target.trim();
+    let mut characters = target.chars();
+    let first = characters.next()?;
+    (first == '_' || first.is_ascii_alphabetic())
+        .then_some(target)
+        .filter(|_| {
+            characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+        })
+}
+
+fn python_method_call(line: &str, variable: &str, method: &str) -> bool {
+    let pattern = format!("{variable}{method}");
+    line.match_indices(&pattern).any(|(start, _)| {
+        !line[..start].chars().next_back().is_some_and(|character| {
+            character == '.' || character == '_' || character.is_ascii_alphanumeric()
+        })
+    })
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -182,6 +303,8 @@ pub struct Evaluation {
     pub expected: usize,
     pub tool: Scores,
     pub baseline: Scores,
+    /// Scores of the legacy lexical detector on Python files only.
+    pub python_lexical: Option<Scores>,
     /// Correctly located uses whose purpose was annotated, and how many of them the tool got right.
     pub purpose_correct: usize,
     pub purpose_total: usize,
@@ -201,6 +324,9 @@ pub fn evaluate(root: &Path) -> Evaluation {
 
     let mut expectations = Vec::new();
     let mut baseline_hits = BTreeSet::new();
+    let mut python_expectations = BTreeSet::new();
+    let mut python_lexical_hits = BTreeSet::new();
+    let mut has_python_files = false;
     let mut lines = 0;
     for (path, _) in &files {
         let Ok(source) = fs::read_to_string(path) else {
@@ -208,7 +334,17 @@ pub fn evaluate(root: &Path) -> Evaluation {
         };
         let name = relative(path);
         lines += source.lines().count();
-        expectations.extend(parse_expectations(&name, &source));
+        let file_expectations = parse_expectations(&name, &source);
+        if path.extension().is_some_and(|extension| extension == "py") {
+            has_python_files = true;
+            python_expectations.extend(
+                file_expectations
+                    .iter()
+                    .map(|e| (e.file.clone(), e.line, e.algorithm.clone())),
+            );
+            python_lexical_hits.extend(lexical_python_baseline(&name, &source));
+        }
+        expectations.extend(file_expectations);
         baseline_hits.extend(keyword_baseline(&name, &source));
     }
 
@@ -253,6 +389,7 @@ pub fn evaluate(root: &Path) -> Evaluation {
         expected: expected.len(),
         tool: score(&expected, &predicted),
         baseline: score(&expected, &baseline_hits),
+        python_lexical: has_python_files.then(|| score(&python_expectations, &python_lexical_hits)),
         purpose_correct,
         purpose_total,
         analysis_time,
@@ -296,6 +433,9 @@ pub fn render_markdown(evaluation: &Evaluation) -> String {
         row("keyword search", &evaluation.baseline.overall)
     )
     .unwrap();
+    if let Some(lexical) = &evaluation.python_lexical {
+        writeln!(out, "{}", row("Python lexical baseline", &lexical.overall)).unwrap();
+    }
 
     writeln!(out, "\n## By algorithm (agentq)\n\n{header}").unwrap();
     for (algorithm, counts) in &evaluation.tool.by_algorithm {
@@ -305,6 +445,17 @@ pub fn render_markdown(evaluation: &Evaluation) -> String {
     writeln!(out, "\n## By algorithm (keyword search)\n\n{header}").unwrap();
     for (algorithm, counts) in &evaluation.baseline.by_algorithm {
         writeln!(out, "{}", row(algorithm, counts)).unwrap();
+    }
+
+    if let Some(lexical) = &evaluation.python_lexical {
+        writeln!(
+            out,
+            "\n## By algorithm (Python lexical baseline)\n\n{header}"
+        )
+        .unwrap();
+        for (algorithm, counts) in &lexical.by_algorithm {
+            writeln!(out, "{}", row(algorithm, counts)).unwrap();
+        }
     }
 
     writeln!(out, "\n## Purpose\n").unwrap();
@@ -373,6 +524,23 @@ mod tests {
     fn markers_are_hidden_from_the_baseline() {
         assert_eq!(strip_marker("x(); // @expect rsa"), "x(); ");
         assert!(keyword_baseline("f.js", "x(); // @expect rsa:signature").is_empty());
+    }
+
+    #[test]
+    fn parses_python_markers_and_hides_them_from_baselines() {
+        let source = "noop()  # @expect rsa:signature\n";
+        let parsed = parse_expectations("f.py", source);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].purpose, Some(Purpose::Signature));
+        assert!(keyword_baseline("f.py", source).is_empty());
+        assert!(lexical_python_baseline("f.py", source).is_empty());
+    }
+
+    #[test]
+    fn lexical_python_baseline_tracks_and_invalidates_simple_assignments() {
+        let source = "key = rsa.generate_private_key()\nkey = load_key()\nkey.sign(data)\n";
+        let hits = lexical_python_baseline("f.py", source);
+        assert_eq!(hits, [hit("f.py", 1, "rsa")].into_iter().collect());
     }
 
     #[test]
