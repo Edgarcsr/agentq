@@ -1,6 +1,7 @@
 //! Rules that recognize cryptographic calls once the callee has been resolved
 //! to a module and property path.
 
+mod better_auth;
 mod crypto_js;
 mod jwt;
 mod node_crypto;
@@ -35,6 +36,7 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         "crypto" => node_crypto::detect(site),
         "webcrypto" => webcrypto::detect(site),
         "jsonwebtoken" | "jose" => jwt::detect(site),
+        "better-auth/plugins" | "better-auth/plugins/jwt" => better_auth::detect(site),
         "node-forge"
         | "node-rsa"
         | "elliptic"
@@ -51,6 +53,9 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
         _ => vec![],
     }
 }
+
+/// Library reported for the calls recognized by [`hint`].
+pub const HINT_LIBRARY: &str = "node:crypto";
 
 /// Purpose implied by a call that creates no finding by itself.
 pub fn hint(site: &CallSite) -> Option<crate::finding::Purpose> {

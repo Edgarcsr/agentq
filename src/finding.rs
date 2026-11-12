@@ -10,6 +10,11 @@ pub enum Purpose {
     Signature,
     Encryption,
     Hash,
+    /// Keyed message authentication (HMAC). It does not rely on collision
+    /// resistance, so a hash that is weak for digests can still be sound here.
+    Mac,
+    /// Deriving keys from passwords or other secrets (PBKDF2, HKDF).
+    KeyDerivation,
     Unknown,
 }
 
@@ -20,6 +25,8 @@ impl Purpose {
             Purpose::Signature => "signature",
             Purpose::Encryption => "encryption",
             Purpose::Hash => "hash",
+            Purpose::Mac => "message authentication",
+            Purpose::KeyDerivation => "key derivation",
             Purpose::Unknown => "unknown",
         }
     }

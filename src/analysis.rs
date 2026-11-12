@@ -40,6 +40,10 @@ pub struct Analysis {
     pub files: Vec<(PathBuf, Language)>,
     /// Every finding, assessed against the embedded knowledge base.
     pub assessments: Vec<Assessment>,
+    /// Calls to known cryptographic APIs that name an algorithm missing from
+    /// the knowledge base. They cannot be assessed, but an inventory that
+    /// hides them would look more complete than it is.
+    pub unassessed: Vec<Finding>,
 }
 
 /// Scans `root`, analyzes every supported file and assesses the findings,
@@ -48,6 +52,15 @@ pub fn analyze_directory(root: &Path, lang: Lang) -> Analysis {
     let mut files = scan_source_files(root);
     files.sort_by(|a, b| a.0.cmp(&b.0));
     let findings = analyze_files(&files);
-    let assessments = assess_all(&findings, KnowledgeBase::embedded(), lang);
-    Analysis { files, assessments }
+    let knowledge = KnowledgeBase::embedded();
+    let assessments = assess_all(&findings, knowledge, lang);
+    let unassessed = findings
+        .into_iter()
+        .filter(|finding| knowledge.get(&finding.algorithm).is_none())
+        .collect();
+    Analysis {
+        files,
+        assessments,
+        unassessed,
+    }
 }

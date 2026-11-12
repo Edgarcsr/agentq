@@ -6,7 +6,7 @@ mod text;
 
 use crate::assess::{Assessment, Urgency};
 use crate::detect::Language;
-use crate::finding::QuantumRisk;
+use crate::finding::{Finding, QuantumRisk};
 use crate::i18n::Lang;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -25,6 +25,8 @@ pub struct Report<'a> {
     pub root: String,
     pub files: &'a [(PathBuf, Language)],
     pub assessments: Vec<Assessment>,
+    /// Uses whose algorithm is not in the knowledge base, sorted by location.
+    pub unassessed: &'a [Finding],
     pub knowledge_version: String,
     /// Language of the labels and of the advice.
     pub lang: Lang,
@@ -35,6 +37,8 @@ pub struct Report<'a> {
 pub struct Summary {
     pub files: usize,
     pub findings: usize,
+    /// Uses of algorithms that are not in the knowledge base.
+    pub unassessed: usize,
     pub by_risk: BTreeMap<String, usize>,
     pub by_urgency: BTreeMap<String, usize>,
     pub by_algorithm: BTreeMap<String, usize>,
@@ -53,6 +57,7 @@ impl Report<'_> {
         let mut summary = Summary {
             files: self.files.len(),
             findings: self.assessments.len(),
+            unassessed: self.unassessed.len(),
             by_risk: BTreeMap::new(),
             by_urgency: BTreeMap::new(),
             by_algorithm: BTreeMap::new(),
@@ -207,6 +212,7 @@ pub(crate) mod fixtures {
             assessments: assessments(),
             knowledge_version: KnowledgeBase::embedded().version.clone(),
             lang: Lang::En,
+            unassessed: &[],
         }
     }
 }

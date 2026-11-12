@@ -10,6 +10,7 @@ fn fixture(name: &str) -> PathBuf {
 
 fn run(args: &[&str], fixture_name: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .env("AGENTQ_HOME", "/nonexistent/agentq-tests")
         .arg(fixture(fixture_name))
         .args(args)
         .output()
@@ -142,6 +143,7 @@ fn directories_without_crypto_report_nothing() {
 #[test]
 fn missing_directory_is_an_error() {
     let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .env("AGENTQ_HOME", "/nonexistent/agentq-tests")
         .arg("/definitely/not/here")
         .output()
         .unwrap();
@@ -170,6 +172,7 @@ fn tui_cannot_be_combined_with_a_report_format() {
 fn sample_shop_covers_every_urgency_level() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("samples/node-shop");
     let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .env("AGENTQ_HOME", "/nonexistent/agentq-tests")
         .arg(&root)
         .args(["--format", "json"])
         .output()
@@ -189,6 +192,7 @@ fn sample_shop_covers_every_urgency_level() {
 #[test]
 fn tui_without_a_path_also_needs_a_terminal() {
     let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .env("AGENTQ_HOME", "/nonexistent/agentq-tests")
         .arg("--tui")
         .output()
         .unwrap();
@@ -199,6 +203,7 @@ fn tui_without_a_path_also_needs_a_terminal() {
 #[test]
 fn without_a_path_a_report_analyzes_the_current_folder() {
     let output = Command::new(env!("CARGO_BIN_EXE_agentq"))
+        .env("AGENTQ_HOME", "/nonexistent/agentq-tests")
         .current_dir(fixture("node_crypto"))
         .args(["--format", "json"])
         .output()
@@ -212,6 +217,7 @@ fn without_a_path_a_report_analyzes_the_current_folder() {
 fn run_with_locale(locale: Option<&str>, args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_agentq"));
     command
+        .env("AGENTQ_HOME", "/nonexistent/agentq-tests")
         .arg(fixture("node_crypto"))
         .args(args)
         .env_remove("LC_ALL")
@@ -243,10 +249,10 @@ fn lang_flag_switches_the_report_to_portuguese() {
             "missing `{expected}` in:\n{text}"
         );
     }
-    // The labels are translated; the description of each algorithm comes from the
-    // knowledge base and stays in English.
+    // The labels and the description of each algorithm are translated.
     assert!(!text.contains("Replace with:"));
-    assert!(text.contains("Security rests on integer factoring"));
+    assert!(!text.contains("Security rests on integer factoring"));
+    assert!(text.contains("A segurança depende da fatoração de inteiros"));
 }
 
 #[test]
