@@ -63,7 +63,7 @@ flowchart TD
 # Usage
 ```sh
 cargo run -- <directory>                      # defaults to the current directory
-cargo run -- <directory> --format markdown    # text (default), json, or markdown
+cargo run -- <directory> --format markdown    # text (default), json, markdown, sarif, or cbom
 cargo run -- <directory> -o report.json -f json
 cargo run -- <directory> --hide-safe --min-confidence medium
 cargo run -- --tui                            # pick a project, then browse the findings
@@ -110,6 +110,23 @@ Findings (most urgent first)
 The analysis runs in the background, so a big folder never freezes the screen: a spinner is shown while it runs, `Esc` cancels, and `r` scans again while the current results stay visible. `Ctrl-C` quits from anywhere.
 
 The interface is structured like a [Bubble Tea](https://github.com/charmbracelet/bubbletea) program: one model (`Tui`), messages (`Msg`: a key, a mouse event, a tick, a finished scan), a single `update` that changes the state and asks for work as commands (`Cmd`), and a `render` that only draws. The runtime runs the commands on threads and feeds their results back as messages, which keeps all the logic testable without a terminal.
+
+### In CI: SARIF, CBOM and `--fail-on`
+
+Two more formats are meant for pipelines and audits:
+
+- `--format sarif` writes [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), which GitHub code scanning and most CI tools read. Only uses that need action are reported (urgency low or higher, level `note`, `warning` or `error`); safe uses are left out, and cryptography whose algorithm cannot be identified (a JWT library, for instance) is a `note` to review. Paths are relative to the analyzed folder, each rule carries a `security-severity`, and each result has a fingerprint that does not change when the code moves up or down.
+- `--format cbom` writes a [CycloneDX 1.6](https://cyclonedx.org/capabilities/cbom/) cryptographic bill of materials: one `cryptographic-asset` per algorithm and key size in use, with the primitive, the classical and NIST quantum security levels when they are known, and every place it was found as evidence. It is an inventory, so post-quantum and safe uses are listed too.
+
+`--fail-on high|medium|low` makes `agentq` exit with status 3 when a use at least that urgent is found, after `--min-confidence` and `--hide-safe` have filtered the list; the report is still written.
+
+```yaml
+# .github/workflows/pqc.yml (excerpt)
+- run: cargo run --release -- . --format sarif -o agentq.sarif --fail-on high
+  continue-on-error: true
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: agentq.sarif }
+```
 
 ### Desktop interface (experimental)
 
