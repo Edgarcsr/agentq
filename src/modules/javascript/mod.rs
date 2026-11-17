@@ -2,6 +2,7 @@
 
 mod bindings;
 mod index;
+pub mod manifest;
 mod rules;
 mod syntax;
 mod value;

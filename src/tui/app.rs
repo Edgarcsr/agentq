@@ -421,6 +421,7 @@ mod tests {
 
     fn app() -> App {
         let analysis = Analysis {
+            manifests: vec![],
             files: fixtures::files(),
             assessments: fixtures::assessments(),
             unassessed: vec![],
@@ -544,6 +545,7 @@ mod tests {
         app.handle_key(KeyCode::Char('s'));
         app.handle_key(KeyCode::Char('G'));
         app.replace(Analysis {
+            manifests: vec![],
             files: fixtures::files(),
             assessments: vec![],
             unassessed: vec![],
@@ -557,6 +559,7 @@ mod tests {
     #[test]
     fn starts_on_the_overview_and_switches_tabs() {
         let analysis = Analysis {
+            manifests: vec![],
             files: fixtures::files(),
             assessments: fixtures::assessments(),
             unassessed: vec![],
