@@ -6,6 +6,7 @@ mod crypto_js;
 mod jwt;
 mod node_crypto;
 mod public_key;
+mod tls;
 mod webcrypto;
 
 use super::bindings::Resolved;
@@ -35,6 +36,7 @@ pub fn detect(site: &CallSite) -> Vec<Detection> {
     match site.resolved.module.as_str() {
         "crypto" => node_crypto::detect(site),
         "webcrypto" => webcrypto::detect(site),
+        "tls" | "https" | "http2" => tls::detect(site),
         "jsonwebtoken" | "jose" => jwt::detect(site),
         "better-auth/plugins" | "better-auth/plugins/jwt" => better_auth::detect(site),
         "node-forge"
