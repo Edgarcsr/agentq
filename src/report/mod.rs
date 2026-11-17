@@ -24,6 +24,8 @@ pub struct Report<'a> {
     /// The directory that was analyzed, as given by the user.
     pub root: String,
     pub files: &'a [(PathBuf, Language)],
+    /// Dependency manifests and lockfiles that were read.
+    pub manifests: &'a [PathBuf],
     pub assessments: Vec<Assessment>,
     /// Uses whose algorithm is not in the knowledge base, sorted by location.
     pub unassessed: &'a [Finding],
@@ -209,6 +211,7 @@ pub(crate) mod fixtures {
         Report {
             root: "project".into(),
             files,
+            manifests: &[],
             assessments: assessments(),
             knowledge_version: KnowledgeBase::embedded().version.clone(),
             lang: Lang::En,

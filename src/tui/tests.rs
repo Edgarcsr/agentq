@@ -18,6 +18,7 @@ use ratatui::crossterm::event::{KeyCode, MouseButton, MouseEventKind};
 
 fn app_with(assessments: Vec<crate::assess::Assessment>) -> App {
     let analysis = Analysis {
+        manifests: vec![],
         files: fixtures::files(),
         assessments,
         unassessed: vec![],
@@ -188,6 +189,7 @@ fn long_details_can_be_scrolled_to_the_very_end() {
 fn rescan_message_appears_in_the_footer() {
     let mut app = app();
     app.replace(Analysis {
+        manifests: vec![],
         files: fixtures::files(),
         assessments: fixtures::assessments(),
         unassessed: vec![],
@@ -491,7 +493,7 @@ fn a_path_skips_the_browser() {
     let Screen::Results(app) = &tui.screen else {
         panic!("expected the results")
     };
-    assert_eq!(app.visible().len(), 22);
+    assert_eq!(app.visible().len(), 27);
 }
 
 #[test]
@@ -547,8 +549,8 @@ fn rescan_keeps_the_results_screen() {
     let Screen::Results(app) = &tui.screen else {
         panic!("expected the results")
     };
-    assert_eq!(app.visible().len(), 22);
-    assert!(app.status.as_deref().unwrap().contains("22 use(s)"));
+    assert_eq!(app.visible().len(), 27);
+    assert!(app.status.as_deref().unwrap().contains("27 use(s)"));
 }
 
 #[test]
@@ -576,6 +578,7 @@ fn app_in(lang: Lang) -> App {
     let mut app = App::new(
         "project".into(),
         Analysis {
+            manifests: vec![],
             files: fixtures::files(),
             assessments: crate::assess::assess_all(
                 &fixtures::assessments()
@@ -743,6 +746,7 @@ fn the_browser_hints_and_errors_are_translated() {
 fn the_rescan_status_is_translated() {
     let mut app = app_in(Lang::PtBr);
     app.replace(Analysis {
+        manifests: vec![],
         files: fixtures::files(),
         assessments: fixtures::assessments(),
         unassessed: vec![],
@@ -851,7 +855,7 @@ fn a_rescan_keeps_the_results_on_screen_while_it_runs() {
         panic!("expected the results")
     };
     assert!(!app.scanning);
-    assert!(app.status.as_deref().unwrap().contains("22 use(s)"));
+    assert!(app.status.as_deref().unwrap().contains("27 use(s)"));
 }
 
 #[test]
@@ -877,11 +881,10 @@ fn the_language_chosen_while_loading_wins() {
         panic!("expected the results")
     };
     assert_eq!(app.lang, Lang::PtBr);
-    assert!(
-        app.selected_assessment()
-            .is_some_and(|a| a.explanation.contains("colher agora")
-                || a.advice.iter().any(|t| t.contains("híbrido")))
-    );
+    // The advice was written in Portuguese, whichever finding comes first.
+    assert!(app.visible().iter().any(|a| {
+        a.explanation.contains("colher agora") || a.advice.iter().any(|t| t.contains("híbrido"))
+    }));
 }
 
 #[test]
@@ -902,7 +905,7 @@ fn a_scan_runs_on_a_background_thread_and_reports_back() {
         panic!("expected Scanned")
     };
     assert_eq!(id, 7);
-    assert_eq!(analysis.assessments.len(), 22);
+    assert_eq!(analysis.assessments.len(), 27);
 }
 
 #[test]

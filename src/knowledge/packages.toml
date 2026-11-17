@@ -1,0 +1,308 @@
+# npm packages that bring public-key cryptography (or a weak hash) into a
+# project. Declaring one is not the same as calling it, so these findings are
+# reported with lower confidence than a call found in the source.
+#
+# `uses` lists what the package is for: each entry is an algorithm id from
+# algorithms.toml and what it is used for. `review = true` marks packages that
+# take the algorithm as configuration (JWT libraries): the dependency is
+# listed for manual review because the manifest does not say which one.
+
+# ---- RSA and general public-key toolkits --------------------------------
+
+[[package]]
+name = "node-rsa"
+uses = [{ algorithm = "rsa", purpose = "unknown" }]
+
+[[package]]
+name = "ursa"
+uses = [{ algorithm = "rsa", purpose = "unknown" }]
+
+[[package]]
+name = "ursa-optional"
+uses = [{ algorithm = "rsa", purpose = "unknown" }]
+
+[[package]]
+name = "keypair"
+uses = [{ algorithm = "rsa", purpose = "unknown" }]
+
+[[package]]
+name = "jsencrypt"
+uses = [{ algorithm = "rsa", purpose = "encryption" }]
+
+[[package]]
+name = "public-encrypt"
+uses = [{ algorithm = "rsa", purpose = "encryption" }]
+
+[[package]]
+name = "selfsigned"
+uses = [{ algorithm = "rsa", purpose = "signature" }]
+
+[[package]]
+name = "pem"
+uses = [{ algorithm = "rsa", purpose = "unknown" }]
+
+[[package]]
+name = "node-forge"
+uses = [
+  { algorithm = "rsa", purpose = "unknown" },
+  { algorithm = "ed25519", purpose = "signature" },
+]
+
+[[package]]
+name = "jsrsasign"
+uses = [
+  { algorithm = "rsa", purpose = "unknown" },
+  { algorithm = "ecdsa", purpose = "signature" },
+]
+
+[[package]]
+name = "browserify-sign"
+uses = [
+  { algorithm = "rsa", purpose = "signature" },
+  { algorithm = "ecdsa", purpose = "signature" },
+]
+
+[[package]]
+name = "@peculiar/webcrypto"
+uses = [
+  { algorithm = "rsa", purpose = "unknown" },
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "pkijs"
+uses = [
+  { algorithm = "rsa", purpose = "signature" },
+  { algorithm = "ecdsa", purpose = "signature" },
+]
+
+[[package]]
+name = "openpgp"
+uses = [
+  { algorithm = "rsa", purpose = "unknown" },
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+  { algorithm = "ed25519", purpose = "signature" },
+]
+
+[[package]]
+name = "ssh2"
+uses = [
+  { algorithm = "rsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+  { algorithm = "ed25519", purpose = "signature" },
+]
+
+[[package]]
+name = "sshpk"
+uses = [
+  { algorithm = "rsa", purpose = "signature" },
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ed25519", purpose = "signature" },
+]
+
+# ---- Diffie-Hellman and elliptic curves ----------------------------------
+
+[[package]]
+name = "diffie-hellman"
+uses = [{ algorithm = "dh", purpose = "key_exchange" }]
+
+[[package]]
+name = "create-ecdh"
+uses = [{ algorithm = "ecdh", purpose = "key_exchange" }]
+
+[[package]]
+name = "elliptic"
+uses = [
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "secp256k1"
+uses = [
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "eccrypto"
+uses = [
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "@noble/secp256k1"
+uses = [
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "@noble/curves"
+uses = [
+  { algorithm = "ecdsa", purpose = "signature" },
+  { algorithm = "ecdh", purpose = "key_exchange" },
+  { algorithm = "ed25519", purpose = "signature" },
+  { algorithm = "x25519", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "@noble/ed25519"
+uses = [{ algorithm = "ed25519", purpose = "signature" }]
+
+[[package]]
+name = "ed25519"
+uses = [{ algorithm = "ed25519", purpose = "signature" }]
+
+[[package]]
+name = "x25519"
+uses = [{ algorithm = "x25519", purpose = "key_exchange" }]
+
+[[package]]
+name = "curve25519-js"
+uses = [
+  { algorithm = "x25519", purpose = "key_exchange" },
+  { algorithm = "ed25519", purpose = "signature" },
+]
+
+[[package]]
+name = "tweetnacl"
+uses = [
+  { algorithm = "ed25519", purpose = "signature" },
+  { algorithm = "x25519", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "libsodium-wrappers"
+uses = [
+  { algorithm = "ed25519", purpose = "signature" },
+  { algorithm = "x25519", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "libsodium"
+uses = [
+  { algorithm = "ed25519", purpose = "signature" },
+  { algorithm = "x25519", purpose = "key_exchange" },
+]
+
+[[package]]
+name = "sodium-native"
+uses = [
+  { algorithm = "ed25519", purpose = "signature" },
+  { algorithm = "x25519", purpose = "key_exchange" },
+]
+
+# ---- Blockchain wallets (secp256k1 or Ed25519 signatures) ----------------
+
+[[package]]
+name = "ethers"
+uses = [{ algorithm = "ecdsa", purpose = "signature" }]
+
+[[package]]
+name = "web3"
+uses = [{ algorithm = "ecdsa", purpose = "signature" }]
+
+[[package]]
+name = "ethereum-cryptography"
+uses = [{ algorithm = "ecdsa", purpose = "signature" }]
+
+[[package]]
+name = "bitcoinjs-lib"
+uses = [{ algorithm = "ecdsa", purpose = "signature" }]
+
+[[package]]
+name = "@solana/web3.js"
+uses = [{ algorithm = "ed25519", purpose = "signature" }]
+
+# ---- Weak hashes ----------------------------------------------------------
+
+[[package]]
+name = "md5"
+uses = [{ algorithm = "md5", purpose = "hash" }]
+
+[[package]]
+name = "js-md5"
+uses = [{ algorithm = "md5", purpose = "hash" }]
+
+[[package]]
+name = "blueimp-md5"
+uses = [{ algorithm = "md5", purpose = "hash" }]
+
+[[package]]
+name = "spark-md5"
+uses = [{ algorithm = "md5", purpose = "hash" }]
+
+[[package]]
+name = "sha1"
+uses = [{ algorithm = "sha1", purpose = "hash" }]
+
+[[package]]
+name = "js-sha1"
+uses = [{ algorithm = "sha1", purpose = "hash" }]
+
+# ---- JWT and JOSE: the algorithm is chosen in code ------------------------
+
+[[package]]
+name = "jsonwebtoken"
+review = true
+
+[[package]]
+name = "jose"
+review = true
+
+[[package]]
+name = "node-jose"
+review = true
+
+[[package]]
+name = "jws"
+review = true
+
+[[package]]
+name = "jwa"
+review = true
+
+[[package]]
+name = "jwt-simple"
+review = true
+
+[[package]]
+name = "njwt"
+review = true
+
+# ---- Post-quantum (already safe) ------------------------------------------
+
+[[package]]
+name = "@noble/post-quantum"
+uses = [
+  { algorithm = "ml-kem", purpose = "key_exchange" },
+  { algorithm = "ml-dsa", purpose = "signature" },
+  { algorithm = "slh-dsa", purpose = "signature" },
+]
+
+[[package]]
+name = "mlkem"
+uses = [{ algorithm = "ml-kem", purpose = "key_exchange" }]
+
+[[package]]
+name = "crystals-kyber"
+uses = [{ algorithm = "ml-kem", purpose = "key_exchange" }]
+
+[[package]]
+name = "kyber-crystals"
+uses = [{ algorithm = "ml-kem", purpose = "key_exchange" }]
+
+[[package]]
+name = "dilithium-crystals-js"
+uses = [{ algorithm = "ml-dsa", purpose = "signature" }]
+
+[[package]]
+name = "liboqs-node"
+uses = [
+  { algorithm = "ml-kem", purpose = "key_exchange" },
+  { algorithm = "ml-dsa", purpose = "signature" },
+]

@@ -231,6 +231,7 @@ texts! {
     report_title: "agentq report for {root}", "Relatório do agentq para {root}";
     report_kb: "knowledge base: {version}", "base de conhecimento: {version}";
     report_files: "Files", "Arquivos";
+    report_manifests: "Dependency manifests", "Manifestos de dependências";
     report_files_detected: "{n} file(s) detected in {root}", "{n} arquivo(s) detectado(s) em {root}";
     report_summary: "Summary", "Resumo";
     report_uses_found: "{n} cryptographic use(s) found", "{n} uso(s) de criptografia encontrado(s)";

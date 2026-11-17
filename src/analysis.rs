@@ -1,10 +1,10 @@
 use crate::analyzer::Analyzer;
 use crate::assess::{Assessment, assess_all};
-use crate::detect::{Language, scan_source_files};
+use crate::detect::{Language, scan_manifests, scan_source_files};
 use crate::finding::Finding;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
-use crate::modules::javascript::JavaScriptAnalyzer;
+use crate::modules::javascript::{JavaScriptAnalyzer, manifest};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,10 +32,27 @@ pub fn analyze_files(files: &[(PathBuf, Language)]) -> Vec<Finding> {
     findings
 }
 
+/// Findings for the dependencies declared in `manifests`, sorted by location.
+/// Unreadable files are skipped.
+pub fn analyze_manifests(manifests: &[PathBuf]) -> Vec<Finding> {
+    let mut findings: Vec<Finding> = manifests
+        .iter()
+        .filter_map(|path| {
+            let source = fs::read_to_string(path).ok()?;
+            Some(manifest::analyze(path, &source))
+        })
+        .flatten()
+        .collect();
+    findings.sort_by(|a, b| (&a.file, a.line, a.column).cmp(&(&b.file, b.line, b.column)));
+    findings
+}
+
 /// Everything found in one directory, before any filtering.
 pub struct Analysis {
     /// Source files of supported languages, sorted by path.
     pub files: Vec<(PathBuf, Language)>,
+    /// Dependency manifests and lockfiles that were read, sorted by path.
+    pub manifests: Vec<PathBuf>,
     /// Every finding, assessed against the embedded knowledge base.
     pub assessments: Vec<Assessment>,
     /// Calls to known cryptographic APIs that name an algorithm missing from
@@ -49,7 +66,11 @@ pub struct Analysis {
 pub fn analyze_directory(root: &Path, lang: Lang) -> Analysis {
     let mut files = scan_source_files(root);
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    let findings = analyze_files(&files);
+    let mut manifests = scan_manifests(root);
+    manifests.sort();
+    let mut findings = analyze_files(&files);
+    findings.extend(analyze_manifests(&manifests));
+    findings.sort_by(|a, b| (&a.file, a.line, a.column).cmp(&(&b.file, b.line, b.column)));
     let knowledge = KnowledgeBase::embedded();
     let assessments = assess_all(&findings, knowledge, lang);
     let unassessed = findings
@@ -58,6 +79,7 @@ pub fn analyze_directory(root: &Path, lang: Lang) -> Analysis {
         .collect();
     Analysis {
         files,
+        manifests,
         assessments,
         unassessed,
     }

@@ -132,6 +132,7 @@ fn main() -> ExitCode {
     let report = Report {
         root: path.display().to_string(),
         files: &analysis.files,
+        manifests: &analysis.manifests,
         assessments,
         unassessed: &analysis.unassessed,
         knowledge_version: knowledge.version.clone(),

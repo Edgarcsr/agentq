@@ -11,6 +11,8 @@ struct JsonReport<'a> {
     /// Language of the explanations and advice; the field names never change.
     language: &'static str,
     root: &'a str,
+    /// Dependency manifests and lockfiles that were read.
+    manifests: &'a [std::path::PathBuf],
     summary: Summary,
     findings: Vec<&'a Assessment>,
     /// Uses of algorithms missing from the knowledge base, to review by hand.
@@ -24,6 +26,7 @@ pub fn render(report: &Report) -> String {
         knowledge_base: &report.knowledge_version,
         language: report.lang.code(),
         root: &report.root,
+        manifests: report.manifests,
         summary: report.summary(),
         findings: report.sorted_assessments(),
         unassessed: report.unassessed,
