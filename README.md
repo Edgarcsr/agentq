@@ -110,6 +110,22 @@ The analysis runs in the background, so a big folder never freezes the screen: a
 
 The interface is structured like a [Bubble Tea](https://github.com/charmbracelet/bubbletea) program: one model (`Tui`), messages (`Msg`: a key, a mouse event, a tick, a finished scan), a single `update` that changes the state and asks for work as commands (`Cmd`), and a `render` that only draws. The runtime runs the commands on threads and feeds their results back as messages, which keeps all the logic testable without a terminal.
 
+### Desktop interface (experimental)
+
+A desktop app built with [GPUI](https://www.gpui.rs) and [gpui-kit](https://crates.io/crates/gpui-kit) sits on top of the same analysis. It is behind a feature so the CLI and the terminal interface stay light, and it needs a recent stable Rust (1.100 or later).
+
+```sh
+cargo run --release --features gui --bin agentq-gui              # start screen
+cargo run --release --features gui --bin agentq-gui -- ./my-app  # open a project
+```
+
+- **Projects:** a table of the folders you opened, with a status (pending, running, done), colored counts by urgency and when they were last scanned. The kind of project (Node.js, TypeScript, Python, Go...) is shown with its icon, and the full path is a tooltip.
+- **Dashboard and findings:** one tab each per project. The dashboard has a verdict, a donut by urgency, what to migrate first, and bars by algorithm, purpose and file. The findings tab is a list with a resizable explanation pane.
+- **Scheduled scans:** plan any number of scans for later, once or repeating daily or weekly. They wait as pending and run while the app is open.
+- **Language:** English or Brazilian Portuguese, from the footer of the sidebar. Recents and schedules are kept in `~/.agentq/recent.toml` and `~/.agentq/schedule.toml`.
+
+The project icons come from [React Symbols](https://react-symbols.dev) (MIT); see `assets/icons/LICENSE-react-symbols`.
+
 ### Language
 
 The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese, all empty give English). In the terminal interface, `shift+l` switches it on the fly.
