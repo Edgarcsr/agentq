@@ -912,3 +912,113 @@ fn two_keys_in_one_file_get_the_purpose_of_the_call_that_receives_each() {
         ]
     );
 }
+
+// ---- asynchronous APIs ---------------------------------------------------
+
+#[test]
+fn promisified_key_generation_is_detected_and_its_keys_are_followed() {
+    let source = "
+        const crypto = require('node:crypto');
+        const { promisify } = require('node:util');
+        const generate = promisify(crypto.generateKeyPair);
+        async function run() {
+          const { publicKey, privateKey } = await generate('ec', { namedCurve: 'P-256' });
+          return crypto.sign(null, data, privateKey);
+        }
+    ";
+    assert_eq!(
+        detect(source),
+        vec![found("ecdsa", Purpose::Signature, Some(256))]
+    );
+}
+
+#[test]
+fn every_way_of_promisifying_resolves_to_the_same_function() {
+    for setup in [
+        "const { promisify } = require('util'); const crypto = require('crypto'); const f = promisify(crypto.pbkdf2);",
+        "import { promisify } from 'node:util'; import crypto from 'node:crypto'; const f = promisify(crypto.pbkdf2);",
+        "import * as util from 'util'; import { pbkdf2 } from 'crypto'; const f = util.promisify(pbkdf2);",
+        "const crypto = require('crypto'); const f = require('util').promisify(crypto.pbkdf2);",
+        "const pify = require('pify'); const crypto = require('crypto'); const f = pify(crypto.pbkdf2);",
+    ] {
+        let source =
+            format!("{setup} async function d() {{ return f('pw', 'salt', 1000, 32, 'sha1'); }}");
+        assert_eq!(
+            detect(&source),
+            vec![found("sha1", Purpose::KeyDerivation, None)],
+            "{setup}"
+        );
+    }
+}
+
+#[test]
+fn keys_received_by_a_callback_tell_the_purpose() {
+    let source = "
+        const crypto = require('crypto');
+        crypto.generateKeyPair('rsa', { modulusLength: 2048 }, (err, publicKey, privateKey) => {
+          crypto.sign('sha256', data, privateKey, (e, signature) => {});
+        });
+    ";
+    let findings = detect(source);
+    assert_eq!(findings[0], found("rsa", Purpose::Signature, Some(2048)));
+}
+
+#[test]
+fn the_error_parameter_of_a_callback_is_not_a_key() {
+    // `err` is also passed to `crypto.sign` here; it must not make the key a signing key.
+    let source = "
+        const crypto = require('crypto');
+        crypto.generateKeyPair('rsa', { modulusLength: 2048 }, function (err, publicKey) {
+          crypto.publicEncrypt(publicKey, secret);
+          log(err);
+        });
+    ";
+    assert_eq!(
+        detect(source)[0],
+        found("rsa", Purpose::Encryption, Some(2048))
+    );
+}
+
+#[test]
+fn keys_received_by_then_tell_the_purpose() {
+    let source = "
+        const { promisify } = require('util');
+        const crypto = require('crypto');
+        promisify(crypto.generateKeyPair)('rsa', { modulusLength: 3072 })
+          .then(({ publicKey }) => crypto.publicEncrypt(publicKey, secret));
+    ";
+    assert_eq!(
+        detect(source)[0],
+        found("rsa", Purpose::Encryption, Some(3072))
+    );
+}
+
+#[test]
+fn promisifying_a_local_function_is_ignored() {
+    let source = "
+        const { promisify } = require('util');
+        function generate(cb) { cb(null, 'rsa'); }
+        const g = promisify(generate);
+        g('rsa', { modulusLength: 2048 });
+    ";
+    assert_eq!(detect(source), vec![]);
+}
+
+#[test]
+fn awaited_dynamic_imports_and_web_crypto_are_detected() {
+    let source = "
+        async function f() {
+          const { generateKeyPairSync } = await import('node:crypto');
+          generateKeyPairSync('rsa', { modulusLength: 4096 });
+          const kp = await globalThis.crypto.subtle.generateKey(
+            { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+        }
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("rsa", Purpose::Unknown, Some(4096)),
+            found("ecdsa", Purpose::Signature, Some(256)),
+        ]
+    );
+}

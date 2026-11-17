@@ -276,6 +276,11 @@ impl Bindings {
             }
             "call_expression" => {
                 let function = node.child_by_field_name("function")?;
+                // `promisify(crypto.pbkdf2)` is the same function, returning a promise.
+                if self.is_promisifier(function, source) {
+                    let wrapped = node.child_by_field_name("arguments")?.named_child(0)?;
+                    return self.resolve(wrapped, source);
+                }
                 let is_loader = function.kind() == "import"
                     || (function.kind() == "identifier"
                         && text(function, source) == "require"
@@ -293,6 +298,28 @@ impl Bindings {
             _ => return None,
         };
         Some(normalize_webcrypto(resolved))
+    }
+}
+
+/// Functions that turn a callback API into one returning a promise.
+const PROMISIFIERS: &[(&str, &[&str])] = &[
+    ("util", &["promisify"]),
+    ("bluebird", &["promisify"]),
+    ("es6-promisify", &["promisify"]),
+    ("pify", &[]),
+    ("thenify", &[]),
+];
+
+impl Bindings {
+    /// Whether `function` is `util.promisify` or one of its lookalikes.
+    fn is_promisifier(&self, function: Node, source: &str) -> bool {
+        self.resolve(function, source).is_some_and(|resolved| {
+            PROMISIFIERS.iter().any(|(module, path)| {
+                resolved.module == *module
+                    && resolved.path.len() == path.len()
+                    && resolved.path.iter().zip(*path).all(|(a, b)| a == b)
+            })
+        })
     }
 }
 
@@ -404,6 +431,37 @@ mod tests {
         assert_eq!(resolve_in(src, "b"), resolved("crypto", &[]));
         assert_eq!(resolve_in(src, "h"), resolved("crypto", &["createHash"]));
         assert_eq!(resolve_in(src, "sign"), resolved("crypto", &["sign"]));
+    }
+
+    #[test]
+    fn promisified_functions_resolve_to_the_original() {
+        let util = "const { promisify } = require('node:util'); const crypto = require('crypto');";
+        assert_eq!(
+            resolve_in(util, "promisify(crypto.pbkdf2)"),
+            resolved("crypto", &["pbkdf2"])
+        );
+        let namespace = "import * as util from 'util'; import { generateKeyPair } from 'crypto';";
+        assert_eq!(
+            resolve_in(namespace, "util.promisify(generateKeyPair)"),
+            resolved("crypto", &["generateKeyPair"])
+        );
+        let inline = "const crypto = require('crypto');";
+        assert_eq!(
+            resolve_in(inline, "require('util').promisify(crypto.generateKeyPair)"),
+            resolved("crypto", &["generateKeyPair"])
+        );
+        let pify = "const pify = require('pify'); const crypto = require('crypto');";
+        assert_eq!(
+            resolve_in(pify, "pify(crypto.randomBytes)"),
+            resolved("crypto", &["randomBytes"])
+        );
+    }
+
+    #[test]
+    fn promisifying_something_unknown_resolves_to_nothing() {
+        let src = "const { promisify } = require('util'); function local() {}";
+        assert_eq!(resolve_in(src, "promisify(local)"), None);
+        assert_eq!(resolve_in(src, "promisify()"), None);
     }
 
     #[test]
