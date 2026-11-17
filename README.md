@@ -25,7 +25,7 @@ Sufficiently powerful quantum computers could compromise public-key cryptographi
 The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)** projects. Python, Java, and Go files are listed by the scanner but not analyzed yet.
 
 1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages.
-2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
+2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, and asynchronous code too (`util.promisify`, callbacks, `await`, `.then`), so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
 3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
 4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
 5. **Report.** Text, JSON, or Markdown, most urgent first.
@@ -143,8 +143,8 @@ JSON output keeps its field names and machine values (`urgency`, `purpose`, ...)
 
 | | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: |
-| agentq | 100.0% | 95.9% | 97.9% |
-| keyword search | 67.4% | 63.3% | 65.3% |
+| agentq | 100.0% | 96.5% | 98.2% |
+| keyword search | 66.7% | 63.2% | 64.9% |
 
 The corpus was written by the authors of the analyzer, so these numbers show regressions and the gap to a naive search, not performance on unseen code. Validation on real repositories is still to do.
 
@@ -154,7 +154,7 @@ agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools),
 
 - Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
 - Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
-- Purpose inference follows the key by variable name within one file; it does not follow it through function parameters, object fields or other files.
+- Purpose inference follows the key by variable name within one file, including the parameters of a Node callback and of a promise's `.then`; it does not follow it through other function parameters, object fields or other files.
 - Only JavaScript and TypeScript are analyzed.
 
 ## Next steps

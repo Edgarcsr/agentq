@@ -1,13 +1,13 @@
 # Evaluation
 
-Corpus: 12 files, 109 lines, 49 annotated cryptographic uses.
+Corpus: 13 files, 146 lines, 57 annotated cryptographic uses.
 
 ## Overall
 
 | | TP | FP | FN | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| agentq | 47 | 0 | 2 | 100.0% | 95.9% | 97.9% |
-| keyword search | 31 | 15 | 18 | 67.4% | 63.3% | 65.3% |
+| agentq | 55 | 0 | 2 | 100.0% | 96.5% | 98.2% |
+| keyword search | 36 | 18 | 21 | 66.7% | 63.2% | 64.9% |
 
 ## By algorithm (agentq)
 
@@ -21,14 +21,14 @@ Corpus: 12 files, 109 lines, 49 annotated cryptographic uses.
 | dh | 2 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | dsa | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | ecdh | 3 | 0 | 0 | 100.0% | 100.0% | 100.0% |
-| ecdsa | 2 | 0 | 0 | 100.0% | 100.0% | 100.0% |
+| ecdsa | 4 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | ed25519 | 2 | 0 | 0 | 100.0% | 100.0% | 100.0% |
-| md5 | 2 | 0 | 1 | 100.0% | 66.7% | 80.0% |
+| md5 | 3 | 0 | 1 | 100.0% | 75.0% | 85.7% |
 | ml-dsa | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | ml-kem | 2 | 0 | 0 | 100.0% | 100.0% | 100.0% |
-| rsa | 11 | 0 | 1 | 100.0% | 91.7% | 95.7% |
-| sha1 | 4 | 0 | 0 | 100.0% | 100.0% | 100.0% |
-| sha2-256 | 5 | 0 | 0 | 100.0% | 100.0% | 100.0% |
+| rsa | 14 | 0 | 1 | 100.0% | 93.3% | 96.6% |
+| sha1 | 5 | 0 | 0 | 100.0% | 100.0% | 100.0% |
+| sha2-256 | 6 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | sha2-384 | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | sha2-512 | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | sha3 | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
@@ -46,14 +46,14 @@ Corpus: 12 files, 109 lines, 49 annotated cryptographic uses.
 | dh | 0 | 0 | 2 | - | 0.0% | - |
 | dsa | 1 | 1 | 0 | 50.0% | 100.0% | 66.7% |
 | ecdh | 1 | 0 | 2 | 100.0% | 33.3% | 50.0% |
-| ecdsa | 1 | 0 | 1 | 100.0% | 50.0% | 66.7% |
+| ecdsa | 1 | 1 | 3 | 50.0% | 25.0% | 33.3% |
 | ed25519 | 1 | 0 | 1 | 100.0% | 50.0% | 66.7% |
-| md5 | 3 | 4 | 0 | 42.9% | 100.0% | 60.0% |
+| md5 | 4 | 4 | 0 | 50.0% | 100.0% | 66.7% |
 | ml-dsa | 0 | 0 | 1 | - | 0.0% | - |
 | ml-kem | 0 | 0 | 2 | - | 0.0% | - |
-| rsa | 8 | 4 | 4 | 66.7% | 66.7% | 66.7% |
-| sha1 | 3 | 3 | 1 | 50.0% | 75.0% | 60.0% |
-| sha2-256 | 5 | 3 | 0 | 62.5% | 100.0% | 76.9% |
+| rsa | 10 | 6 | 5 | 62.5% | 66.7% | 64.5% |
+| sha1 | 4 | 3 | 1 | 57.1% | 80.0% | 66.7% |
+| sha2-256 | 6 | 3 | 0 | 66.7% | 100.0% | 80.0% |
 | sha2-384 | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | sha2-512 | 1 | 0 | 0 | 100.0% | 100.0% | 100.0% |
 | sha3 | 0 | 0 | 1 | - | 0.0% | - |
@@ -61,11 +61,11 @@ Corpus: 12 files, 109 lines, 49 annotated cryptographic uses.
 
 ## Purpose
 
-Of 47 located uses with an annotated purpose, agentq assigned the right purpose to 47 (100.0%).
+Of 55 located uses with an annotated purpose, agentq assigned the right purpose to 55 (100.0%).
 
 ## Speed
 
-Analyzing the corpus takes 7.7 ms on average over 20 runs (1563 files/s, 14196 lines/s).
+Analyzing the corpus takes 10.5 ms on average over 20 runs (1232 files/s, 13840 lines/s).
 
 ## Missed by agentq (false negatives)
 
