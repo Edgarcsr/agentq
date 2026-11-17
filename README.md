@@ -25,7 +25,7 @@ Sufficiently powerful quantum computers could compromise public-key cryptographi
 The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)** projects. Python, Java, and Go files are listed by the scanner but not analyzed yet.
 
 1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages and the dependency manifests (`package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`).
-2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, and asynchronous code too (`util.promisify`, callbacks, `await`, `.then`), so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
+2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, and asynchronous code too (`util.promisify`, callbacks, `await`, `.then`), so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not. It also reads TLS configuration (`tls`, `https` and `http2`): the cipher suites in `ciphers` (each names a key exchange, an authentication algorithm and a cipher), the curves in `ecdhCurve` (a hybrid such as `X25519MLKEM768` counts as post-quantum), `sigalgs` and `dhparam`.
 3. **Read dependencies.** Packages that bring public-key cryptography (`elliptic`, `node-rsa`, `node-forge`, `tweetnacl`, `ethers`, ...), weak hashes (`md5`, `sha1`) or post-quantum algorithms (`@noble/post-quantum`) are reported from the manifests, listed in [`src/knowledge/packages.toml`](src/knowledge/packages.toml). A declared dependency is not a call, so it has `Medium` confidence (`Low` in `devDependencies` and `peerDependencies`), and `Low` when only a lockfile lists it, as a dependency of a dependency. JWT libraries (`jsonwebtoken`, `jose`, ...) take the algorithm as configuration, so they go to the list for manual review.
 4. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
 5. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
@@ -144,18 +144,19 @@ JSON output keeps its field names and machine values (`urgency`, `purpose`, ...)
 
 | | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: |
-| agentq | 100.0% | 96.5% | 98.2% |
-| keyword search | 66.7% | 63.2% | 64.9% |
+| agentq | 100.0% | 97.1% | 98.6% |
+| keyword search | 59.4% | 54.3% | 56.7% |
 
 The corpus was written by the authors of the analyzer, so these numbers show regressions and the gap to a naive search, not performance on unseen code. Validation on real repositories is still to do.
 
-agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap is scope (TLS configuration, SSH keys, dependency manifests). On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
+agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap was scope (TLS configuration, SSH keys, dependency manifests); those numbers were taken before TLS configuration and dependency manifests were supported. On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
 
 ### Known limitations
 
 - Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
 - Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
 - Purpose inference follows the key by variable name within one file, including the parameters of a Node callback and of a promise's `.then`; it does not follow it through other function parameters, object fields or other files.
+- TLS options are read only when they are literal strings; protocol versions (`minVersion`, `secureProtocol`) and certificates are not examined.
 - Only JavaScript and TypeScript are analyzed.
 
 ## Next steps
