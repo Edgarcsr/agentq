@@ -1022,3 +1022,171 @@ fn awaited_dynamic_imports_and_web_crypto_are_detected() {
         ]
     );
 }
+
+// ---- TLS configuration ---------------------------------------------------
+
+fn tls(options: &str) -> Vec<(String, Purpose, Option<u32>)> {
+    detect(&format!(
+        "const https = require('node:https'); https.createServer({options}, handler);"
+    ))
+}
+
+#[test]
+fn a_cipher_suite_names_its_key_exchange_authentication_and_cipher() {
+    assert_eq!(
+        tls("{ ciphers: 'ECDHE-RSA-AES128-GCM-SHA256' }"),
+        vec![
+            found("ecdh", Purpose::KeyExchange, None),
+            found("rsa", Purpose::Signature, None),
+            found("aes-128", Purpose::Encryption, None),
+        ]
+    );
+    assert_eq!(
+        tls("{ ciphers: 'DHE-RSA-AES256-SHA' }"),
+        vec![
+            found("dh", Purpose::KeyExchange, None),
+            found("rsa", Purpose::Signature, None),
+            found("aes-256", Purpose::Encryption, None),
+            found("sha1", Purpose::Mac, None),
+        ]
+    );
+}
+
+#[test]
+fn a_suite_without_ecdhe_or_dhe_sends_the_session_key_under_rsa() {
+    assert_eq!(
+        tls("{ ciphers: 'AES256-SHA' }"),
+        vec![
+            found("rsa", Purpose::KeyExchange, None),
+            found("aes-256", Purpose::Encryption, None),
+            found("sha1", Purpose::Mac, None),
+        ]
+    );
+}
+
+#[test]
+fn iana_names_and_tls13_suites_are_understood() {
+    assert_eq!(
+        tls("{ ciphers: 'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384' }"),
+        vec![
+            found("ecdh", Purpose::KeyExchange, None),
+            found("ecdsa", Purpose::Signature, None),
+            found("aes-256", Purpose::Encryption, None),
+        ]
+    );
+    // TLS 1.3 suites do not name a key exchange, so none is guessed.
+    assert_eq!(
+        tls("{ ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256' }"),
+        vec![
+            found("aes-128", Purpose::Encryption, None),
+            found("chacha20", Purpose::Encryption, None),
+        ]
+    );
+}
+
+#[test]
+fn old_ciphers_are_reported() {
+    assert_eq!(
+        tls("{ ciphers: 'ECDHE-RSA-DES-CBC3-SHA:ECDHE-RSA-RC4-SHA' }"),
+        vec![
+            found("ecdh", Purpose::KeyExchange, None),
+            found("rsa", Purpose::Signature, None),
+            found("3des", Purpose::Encryption, None),
+            found("sha1", Purpose::Mac, None),
+            found("rc4", Purpose::Encryption, None),
+        ]
+    );
+}
+
+#[test]
+fn openssl_keywords_and_exclusions_name_no_suite() {
+    assert_eq!(tls("{ ciphers: 'HIGH:!aNULL:!MD5:@STRENGTH' }"), vec![]);
+}
+
+#[test]
+fn a_long_list_of_suites_reports_each_thing_once() {
+    let suites =
+        "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256";
+    let found_algorithms: Vec<_> = tls(&format!("{{ ciphers: '{suites}' }}"))
+        .into_iter()
+        .map(|(algorithm, purpose, _)| (algorithm, purpose))
+        .collect();
+    assert_eq!(
+        found_algorithms,
+        vec![
+            ("ecdh".to_string(), Purpose::KeyExchange),
+            ("rsa".to_string(), Purpose::Signature),
+            ("aes-128".to_string(), Purpose::Encryption),
+            ("aes-256".to_string(), Purpose::Encryption),
+            ("ecdsa".to_string(), Purpose::Signature),
+        ]
+    );
+}
+
+#[test]
+fn offered_curves_are_reported_and_hybrids_are_post_quantum() {
+    assert_eq!(
+        tls("{ ecdhCurve: 'X25519:prime256v1:secp384r1:auto' }"),
+        vec![
+            found("x25519", Purpose::KeyExchange, Some(256)),
+            found("ecdh", Purpose::KeyExchange, Some(256)),
+            found("ecdh", Purpose::KeyExchange, Some(384)),
+        ]
+    );
+    assert_eq!(
+        tls("{ ecdhCurve: 'X25519MLKEM768' }"),
+        vec![found("ml-kem", Purpose::KeyExchange, None)]
+    );
+}
+
+#[test]
+fn signature_algorithms_and_dh_parameters() {
+    assert_eq!(
+        tls("{ sigalgs: 'RSA+SHA256:ecdsa_secp256r1_sha256:ed25519' }"),
+        vec![
+            found("rsa", Purpose::Signature, None),
+            found("ecdsa", Purpose::Signature, None),
+            found("ed25519", Purpose::Signature, None),
+        ]
+    );
+    assert_eq!(
+        tls("{ dhparam: fs.readFileSync('dh.pem') }"),
+        vec![found("dh", Purpose::KeyExchange, None)]
+    );
+}
+
+#[test]
+fn options_are_found_wherever_they_are_passed() {
+    // A constant object, as the second argument of connect, and on an Agent.
+    let source = "
+        const tls = require('tls');
+        const https = require('https');
+        const options = { ecdhCurve: 'prime256v1' };
+        tls.connect(443, 'example.com', options);
+        new https.Agent({ ciphers: 'AES128-SHA' });
+        https.request('https://x', { ecdhCurve: 'secp384r1' });
+    ";
+    assert_eq!(
+        detect(source),
+        vec![
+            found("ecdh", Purpose::KeyExchange, Some(256)),
+            found("rsa", Purpose::KeyExchange, None),
+            found("aes-128", Purpose::Encryption, None),
+            found("sha1", Purpose::Mac, None),
+            found("ecdh", Purpose::KeyExchange, Some(384)),
+        ]
+    );
+}
+
+#[test]
+fn tls_options_that_are_not_literals_or_not_tls_are_ignored() {
+    let source = "
+        const https = require('https');
+        const http = require('http');
+        https.createServer({ ciphers: process.env.CIPHERS }, handler);
+        https.createServer({ ciphers: suites.join(':') }, handler);
+        http.createServer({ ciphers: 'AES128-SHA' }, handler);
+        function createServer(o) {} createServer({ ciphers: 'AES128-SHA' });
+    ";
+    assert_eq!(detect(source), vec![]);
+}
