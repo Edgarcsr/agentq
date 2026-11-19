@@ -368,9 +368,10 @@ fn bars(rows: Vec<(String, Mix)>, pal: Pal) -> AnyElement {
         .into_any_element()
 }
 
-/// The source languages found, and a warning for the ones agentq does not
-/// analyze yet.
-fn languages_block(languages: &[(Language, usize)], pal: Pal) -> AnyElement {
+/// The source languages found: one row each with its share of the files, and a
+/// tag saying whether agentq analyzes it. The ones it does not are flagged,
+/// since the findings above do not cover them.
+fn languages_block(languages: &[(Language, usize)], narrow: bool, pal: Pal) -> AnyElement {
     if languages.is_empty() {
         return div()
             .text_sm()
@@ -378,8 +379,10 @@ fn languages_block(languages: &[(Language, usize)], pal: Pal) -> AnyElement {
             .child(pal.ui.no_source_files)
             .into_any_element();
     }
+    let total = languages.iter().map(|(_, n)| *n).sum::<usize>().max(1);
     let unsupported = languages.iter().any(|(l, _)| !is_analyzed(*l));
-    let chips = languages.iter().map(|(language, count)| {
+
+    let rows = languages.iter().map(|(language, count)| {
         let analyzed = is_analyzed(*language);
         let (name, icon) = match language {
             Language::JavaScriptTypeScript => ("JavaScript / TypeScript", "typescript"),
@@ -387,55 +390,97 @@ fn languages_block(languages: &[(Language, usize)], pal: Pal) -> AnyElement {
             Language::Java => ("Java", "java"),
             Language::Go => ("Go", "go"),
         };
+        let share = *count as f32 / total as f32;
+        let tag = if analyzed {
+            h_flex()
+                .gap_1p5()
+                .items_center()
+                .text_xs()
+                .text_color(pal.muted)
+                .child(Icon::new(Lucide::Check).size_3p5())
+                .child(pal.ui.analyzed)
+                .into_any_element()
+        } else {
+            h_flex()
+                .id(("language-tag", *language as usize))
+                .gap_1p5()
+                .px_2()
+                .py_0p5()
+                .items_center()
+                .rounded_full()
+                .bg(pal.yellow.opacity(0.14))
+                .text_xs()
+                .text_color(pal.yellow)
+                .tooltip(tip(pal.ui.not_analyzed_hint.into()))
+                .child(Icon::new(Lucide::TriangleAlert).size_3p5())
+                .child(pal.ui.not_analyzed)
+                .into_any_element()
+        };
         h_flex()
-            .id(("language", *language as usize))
-            .gap_2p5()
-            .px_3()
-            .py_2()
+            .h(px(44.))
+            .gap_4()
             .items_center()
-            .rounded_lg()
-            .border_1()
+            .border_b_1()
             .border_color(pal.border)
             .text_sm()
-            .when(!analyzed, |s| {
-                s.tooltip(tip(pal.ui.not_analyzed_hint.into()))
-            })
             .child(
                 img(format!("icons/{icon}.svg"))
-                    .size(px(16.))
+                    .size(px(18.))
                     .flex_shrink_0(),
             )
-            .child(div().font_medium().child(name))
             .child(
                 div()
+                    .w(px(if narrow { 120. } else { 180. }))
+                    .flex_shrink_0()
+                    .truncate()
+                    .font_medium()
+                    .child(name),
+            )
+            .when(!narrow, |s| {
+                s.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h(px(4.))
+                        .rounded_full()
+                        .bg(pal.border)
+                        .child(
+                            div()
+                                .h_full()
+                                .w(relative(share))
+                                .rounded_full()
+                                .bg(if analyzed { pal.soft } else { pal.muted }),
+                        ),
+                )
+            })
+            .when(narrow, |s| s.child(div().flex_1()))
+            .child(
+                div()
+                    .w(px(84.))
+                    .flex_shrink_0()
+                    .text_right()
                     .text_color(pal.muted)
                     .child(pal.ui.files_count(*count)),
             )
-            .when(!analyzed, |s| {
-                s.child(
-                    h_flex()
-                        .gap_1p5()
-                        .items_center()
-                        .text_color(pal.yellow)
-                        .child(Icon::new(Lucide::TriangleAlert).size_4())
-                        .child(pal.ui.not_analyzed),
-                )
-            })
+            .child(div().flex_shrink_0().child(tag))
     });
+
     v_flex()
-        .gap_3()
+        .gap_1()
         .when(languages.len() > 1, |s| {
             s.child(
                 div()
+                    .pb_2()
                     .text_sm()
                     .text_color(pal.muted)
                     .child(pal.ui.languages_detected(languages.len())),
             )
         })
-        .child(h_flex().flex_wrap().gap_3().children(chips))
+        .children(rows)
         .when(unsupported, |s| {
             s.child(
                 div()
+                    .pt_3()
                     .text_sm()
                     .text_color(pal.muted)
                     .child(pal.ui.coverage_note),
@@ -1672,11 +1717,6 @@ impl Workspace {
             .pb_12()
             .gap_12()
             .child(head)
-            .child(section(
-                pal.ui.languages_title,
-                pal,
-                languages_block(languages, pal),
-            ))
             .child(section(pal.ui.migrate_first, pal, migrate))
             .child(
                 h_flex()
@@ -1692,6 +1732,11 @@ impl Workspace {
                     ))
                     .child(col(section(pal.ui.files, pal, file_bars).into_any_element())),
             )
+            .child(section(
+                pal.ui.languages_title,
+                pal,
+                languages_block(languages, narrow, pal),
+            ))
             .into_any_element()
     }
 
