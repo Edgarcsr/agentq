@@ -97,9 +97,9 @@ mod language_tests {
     use super::*;
 
     #[test]
-    fn only_javascript_and_typescript_are_analyzed_for_now() {
+    fn javascript_typescript_and_python_are_analyzed_for_now() {
         assert!(is_analyzed(Language::JavaScriptTypeScript));
-        assert!(!is_analyzed(Language::Python));
+        assert!(is_analyzed(Language::Python));
         assert!(!is_analyzed(Language::Java));
         assert!(!is_analyzed(Language::Go));
     }
