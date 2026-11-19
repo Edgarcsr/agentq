@@ -346,14 +346,17 @@ fn bars(rows: Vec<(String, Mix)>, pal: Pal) -> AnyElement {
                                 .w(relative(n as f32 / max))
                                 .rounded_full()
                                 .overflow_hidden()
-                                .children(mix.iter().enumerate().filter(|(_, c)| **c > 0).map(
-                                    |(i, c)| {
-                                        div()
-                                            .h_full()
-                                            .bg(colors[i])
-                                            .w(relative(*c as f32 / n as f32))
-                                    },
-                                )),
+                                // Green first, red last, so the red ends up on the right.
+                                .children(
+                                    mix.iter().enumerate().rev().filter(|(_, c)| **c > 0).map(
+                                        |(i, c)| {
+                                            div()
+                                                .h_full()
+                                                .bg(colors[i])
+                                                .w(relative(*c as f32 / n as f32))
+                                        },
+                                    ),
+                                ),
                         ),
                 )
                 .child(
