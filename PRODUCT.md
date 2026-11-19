@@ -25,7 +25,7 @@ Detection is done on the syntax tree (tree-sitter), following imports, aliases, 
 - A project has a status: pending (not scanned yet), running (scan in progress) or done.
 
 ## Capabilities and Constraints
-- Only JS/TS is analyzed; Python, Java and Go files are listed but not analyzed yet. The UI must not imply coverage that does not exist.
+- JavaScript, TypeScript and Python are analyzed; Java and Go files are listed but not analyzed yet. The UI must not imply coverage that does not exist.
 - Risk classes: broken by quantum, weakened, safe. Urgency: high, medium, low, none. Confidence: low, medium, high.
 - The GUI is opt-in (`--features gui`) so the CLI and TUI stay light.
 - Platform and distribution beyond macOS are undecided.
