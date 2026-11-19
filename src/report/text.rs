@@ -28,6 +28,12 @@ pub fn render(report: &Report) -> String {
         )
         .unwrap();
     }
+    if !report.manifests.is_empty() {
+        writeln!(out, "\n{}", t.report_manifests).unwrap();
+        for manifest in report.manifests {
+            writeln!(out, "  {}", manifest.display()).unwrap();
+        }
+    }
     writeln!(
         out,
         "\n{}\n",
@@ -154,6 +160,7 @@ mod tests {
         let report = Report {
             root: "empty".into(),
             files: &[],
+            manifests: &[],
             assessments: vec![],
             knowledge_version: "t".into(),
             lang: crate::i18n::Lang::En,

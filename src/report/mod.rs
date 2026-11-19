@@ -1,7 +1,9 @@
-//! Renders assessments as text, JSON or Markdown.
+//! Renders assessments as text, JSON, Markdown, SARIF or a CycloneDX CBOM.
 
+mod cbom;
 mod json;
 mod markdown;
+mod sarif;
 mod text;
 
 use crate::assess::{Assessment, Urgency};
@@ -17,6 +19,10 @@ pub enum Format {
     Text,
     Json,
     Markdown,
+    /// SARIF 2.1.0, for code scanning in CI.
+    Sarif,
+    /// CycloneDX 1.6 cryptographic bill of materials.
+    Cbom,
 }
 
 /// Everything a report is built from.
@@ -24,6 +30,8 @@ pub struct Report<'a> {
     /// The directory that was analyzed, as given by the user.
     pub root: String,
     pub files: &'a [(PathBuf, Language)],
+    /// Dependency manifests and lockfiles that were read.
+    pub manifests: &'a [PathBuf],
     pub assessments: Vec<Assessment>,
     /// Uses whose algorithm is not in the knowledge base, sorted by location.
     pub unassessed: &'a [Finding],
@@ -119,6 +127,8 @@ pub fn render(report: &Report, format: Format) -> String {
         Format::Text => text::render(report),
         Format::Json => json::render(report),
         Format::Markdown => markdown::render(report),
+        Format::Sarif => sarif::render(report),
+        Format::Cbom => cbom::render(report),
     }
 }
 
@@ -209,6 +219,7 @@ pub(crate) mod fixtures {
         Report {
             root: "project".into(),
             files,
+            manifests: &[],
             assessments: assessments(),
             knowledge_version: KnowledgeBase::embedded().version.clone(),
             lang: Lang::En,

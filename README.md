@@ -24,11 +24,12 @@ Sufficiently powerful quantum computers could compromise public-key cryptographi
 
 The prototype runs the whole workflow for **JavaScript and TypeScript (Node.js)** projects. Python, Java, and Go files are listed by the scanner but not analyzed yet.
 
-1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages.
-2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not.
-3. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
-4. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
-5. **Report.** Text, JSON, or Markdown, most urgent first.
+1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`), and lists files in the supported languages and the dependency manifests (`package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`).
+2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, and asynchronous code too (`util.promisify`, callbacks, `await`, `.then`), so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not. It also reads TLS configuration (`tls`, `https` and `http2`): the cipher suites in `ciphers` (each names a key exchange, an authentication algorithm and a cipher), the curves in `ecdhCurve` (a hybrid such as `X25519MLKEM768` counts as post-quantum), `sigalgs` and `dhparam`.
+3. **Read dependencies.** Packages that bring public-key cryptography (`elliptic`, `node-rsa`, `node-forge`, `tweetnacl`, `ethers`, ...), weak hashes (`md5`, `sha1`) or post-quantum algorithms (`@noble/post-quantum`) are reported from the manifests, listed in [`src/knowledge/packages.toml`](src/knowledge/packages.toml). A declared dependency is not a call, so it has `Medium` confidence (`Low` in `devDependencies` and `peerDependencies`), and `Low` when only a lockfile lists it, as a dependency of a dependency. JWT libraries (`jsonwebtoken`, `jose`, ...) take the algorithm as configuration, so they go to the list for manual review.
+4. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
+5. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
+6. **Report.** Text, JSON, or Markdown, most urgent first.
 
 ### How it works
 
@@ -62,7 +63,7 @@ flowchart TD
 # Usage
 ```sh
 cargo run -- <directory>                      # defaults to the current directory
-cargo run -- <directory> --format markdown    # text (default), json, or markdown
+cargo run -- <directory> --format markdown    # text (default), json, markdown, sarif, or cbom
 cargo run -- <directory> -o report.json -f json
 cargo run -- <directory> --hide-safe --min-confidence medium
 cargo run -- --tui                            # pick a project, then browse the findings
@@ -110,6 +111,39 @@ The analysis runs in the background, so a big folder never freezes the screen: a
 
 The interface is structured like a [Bubble Tea](https://github.com/charmbracelet/bubbletea) program: one model (`Tui`), messages (`Msg`: a key, a mouse event, a tick, a finished scan), a single `update` that changes the state and asks for work as commands (`Cmd`), and a `render` that only draws. The runtime runs the commands on threads and feeds their results back as messages, which keeps all the logic testable without a terminal.
 
+### In CI: SARIF, CBOM and `--fail-on`
+
+Two more formats are meant for pipelines and audits:
+
+- `--format sarif` writes [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), which GitHub code scanning and most CI tools read. Only uses that need action are reported (urgency low or higher, level `note`, `warning` or `error`); safe uses are left out, and cryptography whose algorithm cannot be identified (a JWT library, for instance) is a `note` to review. Paths are relative to the analyzed folder, each rule carries a `security-severity`, and each result has a fingerprint that does not change when the code moves up or down.
+- `--format cbom` writes a [CycloneDX 1.6](https://cyclonedx.org/capabilities/cbom/) cryptographic bill of materials: one `cryptographic-asset` per algorithm and key size in use, with the primitive, the classical and NIST quantum security levels when they are known, and every place it was found as evidence. It is an inventory, so post-quantum and safe uses are listed too.
+
+`--fail-on high|medium|low` makes `agentq` exit with status 3 when a use at least that urgent is found, after `--min-confidence` and `--hide-safe` have filtered the list; the report is still written.
+
+```yaml
+# .github/workflows/pqc.yml (excerpt)
+- run: cargo run --release -- . --format sarif -o agentq.sarif --fail-on high
+  continue-on-error: true
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: agentq.sarif }
+```
+
+### Desktop interface (experimental)
+
+A desktop app built with [GPUI](https://www.gpui.rs) and [gpui-kit](https://crates.io/crates/gpui-kit) sits on top of the same analysis. It is behind a feature so the CLI and the terminal interface stay light, and it needs a recent stable Rust (1.100 or later).
+
+```sh
+cargo run --release --features gui --bin agentq-gui              # start screen
+cargo run --release --features gui --bin agentq-gui -- ./my-app  # open a project
+```
+
+- **Projects:** a table of the folders you opened, with a status (pending, running, done), colored counts by urgency and when they were last scanned. The kind of project (Node.js, TypeScript, Python, Go...) is shown with its icon, and the full path is a tooltip.
+- **Dashboard and findings:** one tab each per project. The dashboard has a verdict, a donut by urgency, what to migrate first, and bars by algorithm, purpose and file. The findings tab is a list with a resizable explanation pane.
+- **Scheduled scans:** plan any number of scans for later, once or repeating daily or weekly. They wait as pending and run while the app is open.
+- **Language:** English or Brazilian Portuguese, from the footer of the sidebar. Recents and schedules are kept in `~/.agentq/recent.toml` and `~/.agentq/schedule.toml`.
+
+The project icons come from [React Symbols](https://react-symbols.dev) (MIT); see `assets/icons/LICENSE-react-symbols`.
+
 ### Language
 
 The interface and the reports are available in English and Brazilian Portuguese. The language comes from `--lang en|pt-BR`, or else from the `LC_ALL`, `LC_MESSAGES` or `LANG` environment variables (`pt_BR.UTF-8` gives Portuguese, all empty give English). In the terminal interface, `shift+l` switches it on the fly.
@@ -127,18 +161,19 @@ JSON output keeps its field names and machine values (`urgency`, `purpose`, ...)
 
 | | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: |
-| agentq | 100.0% | 95.9% | 97.9% |
-| keyword search | 67.4% | 63.3% | 65.3% |
+| agentq | 100.0% | 97.1% | 98.6% |
+| keyword search | 59.4% | 54.3% | 56.7% |
 
 The corpus was written by the authors of the analyzer, so these numbers show regressions and the gap to a naive search, not performance on unseen code. Validation on real repositories is still to do.
 
-agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap is scope (TLS configuration, SSH keys, dependency manifests). On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
+agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap was scope (TLS configuration, SSH keys, dependency manifests); those numbers were taken before TLS configuration and dependency manifests were supported. On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
 
 ### Known limitations
 
 - Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
 - Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
-- Purpose inference follows the key by variable name within one file; it does not follow it through function parameters, object fields or other files.
+- Purpose inference follows the key by variable name within one file, including the parameters of a Node callback and of a promise's `.then`; it does not follow it through other function parameters, object fields or other files.
+- TLS options are read only when they are literal strings; protocol versions (`minVersion`, `secureProtocol`) and certificates are not examined.
 - Only JavaScript and TypeScript are analyzed.
 
 ## Next steps

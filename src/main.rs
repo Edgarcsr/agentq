@@ -1,4 +1,5 @@
 use agentq::analysis::analyze_directory;
+use agentq::assess::Urgency;
 use agentq::finding::{Confidence, QuantumRisk};
 use agentq::i18n::Lang;
 use agentq::knowledge::KnowledgeBase;
@@ -32,6 +33,10 @@ struct Args {
     #[arg(long)]
     hide_safe: bool,
 
+    /// Exit with status 3 when a use at least this urgent is found (for CI).
+    #[arg(long, value_enum, value_name = "URGENCY")]
+    fail_on: Option<UrgencyArg>,
+
     /// Language of the interface and reports: en or pt-BR (default: from the
     /// environment, else en).
     #[arg(long, value_parser = parse_lang)]
@@ -57,6 +62,27 @@ enum FormatArg {
     Json,
     #[value(alias = "md")]
     Markdown,
+    /// SARIF 2.1.0, for GitHub code scanning and other CI tools.
+    Sarif,
+    /// CycloneDX 1.6 cryptographic bill of materials.
+    Cbom,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum UrgencyArg {
+    Low,
+    Medium,
+    High,
+}
+
+impl From<UrgencyArg> for Urgency {
+    fn from(arg: UrgencyArg) -> Urgency {
+        match arg {
+            UrgencyArg::Low => Urgency::Low,
+            UrgencyArg::Medium => Urgency::Medium,
+            UrgencyArg::High => Urgency::High,
+        }
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -72,6 +98,8 @@ impl From<FormatArg> for Format {
             FormatArg::Text => Format::Text,
             FormatArg::Json => Format::Json,
             FormatArg::Markdown => Format::Markdown,
+            FormatArg::Sarif => Format::Sarif,
+            FormatArg::Cbom => Format::Cbom,
         }
     }
 }
@@ -128,10 +156,20 @@ fn main() -> ExitCode {
         assessments.retain(|assessment| assessment.risk != QuantumRisk::Safe);
     }
 
+    // Counted after the filters, so `--min-confidence` and `--hide-safe` also
+    // decide what can fail a build.
+    let failing = args.fail_on.map(Urgency::from).map_or(0, |threshold| {
+        assessments
+            .iter()
+            .filter(|assessment| assessment.urgency >= threshold)
+            .count()
+    });
+
     let knowledge = KnowledgeBase::embedded();
     let report = Report {
         root: path.display().to_string(),
         files: &analysis.files,
+        manifests: &analysis.manifests,
         assessments,
         unassessed: &analysis.unassessed,
         knowledge_version: knowledge.version.clone(),
@@ -147,6 +185,12 @@ fn main() -> ExitCode {
             }
         }
         None => println!("{rendered}"),
+    }
+    if failing > 0 {
+        eprintln!(
+            "agentq: {failing} use(s) at or above the --fail-on urgency; exiting with status 3"
+        );
+        return ExitCode::from(3);
     }
     ExitCode::SUCCESS
 }

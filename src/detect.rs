@@ -47,8 +47,9 @@ impl Language {
     }
 }
 
-/// Walks `root` and returns every source file whose extension maps to a supported language.
-pub fn scan_source_files(root: &Path) -> Vec<(PathBuf, Language)> {
+/// Every file under `root` that the scan looks at: `.gitignore` is respected
+/// and dependency and build folders are skipped.
+fn walk_files(root: &Path) -> impl Iterator<Item = PathBuf> {
     WalkBuilder::new(root)
         .require_git(false)
         .filter_entry(|entry| {
@@ -63,13 +64,26 @@ pub fn scan_source_files(root: &Path) -> Vec<(PathBuf, Language)> {
         .build()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
-        .filter_map(|entry| {
-            let path = entry.into_path();
+        .map(|entry| entry.into_path())
+}
+
+/// Walks `root` and returns every source file whose extension maps to a supported language.
+pub fn scan_source_files(root: &Path) -> Vec<(PathBuf, Language)> {
+    walk_files(root)
+        .filter_map(|path| {
             let language = path
                 .extension()
                 .and_then(|ext| ext.to_str())
                 .and_then(Language::from_extension)?;
             Some((path, language))
         })
+        .collect()
+}
+
+/// Walks `root` and returns the dependency manifests and lockfiles of the
+/// projects in it (`package.json`, `package-lock.json`, `yarn.lock`, ...).
+pub fn scan_manifests(root: &Path) -> Vec<PathBuf> {
+    walk_files(root)
+        .filter(|path| crate::modules::javascript::manifest::is_manifest(path))
         .collect()
 }
