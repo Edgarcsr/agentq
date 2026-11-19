@@ -16,6 +16,11 @@ fn analyzer_for(language: Language) -> Option<&'static dyn Analyzer> {
     }
 }
 
+/// Whether files in `language` are analyzed. The others are only listed.
+pub fn is_analyzed(language: Language) -> bool {
+    analyzer_for(language).is_some()
+}
+
 /// Runs the analyzer of each file's language and returns all findings sorted
 /// by file, line and column. Files that are not valid UTF-8 are skipped.
 pub fn analyze_files(files: &[(PathBuf, Language)]) -> Vec<Finding> {
@@ -82,5 +87,18 @@ pub fn analyze_directory(root: &Path, lang: Lang) -> Analysis {
         manifests,
         assessments,
         unassessed,
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+
+    #[test]
+    fn only_javascript_and_typescript_are_analyzed_for_now() {
+        assert!(is_analyzed(Language::JavaScriptTypeScript));
+        assert!(!is_analyzed(Language::Python));
+        assert!(!is_analyzed(Language::Java));
+        assert!(!is_analyzed(Language::Go));
     }
 }
