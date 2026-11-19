@@ -64,6 +64,11 @@ pub struct Ui {
     pub algorithms: &'static str,
     pub purposes: &'static str,
     pub files: &'static str,
+    pub languages_title: &'static str,
+    pub not_analyzed: &'static str,
+    pub not_analyzed_hint: &'static str,
+    pub coverage_note: &'static str,
+    pub no_source_files: &'static str,
     pub uses_word: &'static str,
     pub use_word: &'static str,
 
@@ -143,6 +148,11 @@ static EN: Ui = Ui {
     algorithms: "Algorithms",
     purposes: "Purposes",
     files: "Files",
+    languages_title: "Languages",
+    not_analyzed: "not analyzed yet",
+    not_analyzed_hint: "agentq only analyzes JavaScript and TypeScript for now, so these files were listed but not examined.",
+    coverage_note: "The findings cover only the analyzed languages.",
+    no_source_files: "No source files found.",
     uses_word: "uses",
     use_word: "use",
 
@@ -222,6 +232,11 @@ static PT: Ui = Ui {
     algorithms: "Algoritmos",
     purposes: "Propósitos",
     files: "Arquivos",
+    languages_title: "Linguagens",
+    not_analyzed: "ainda não analisada",
+    not_analyzed_hint: "O agentq só analisa JavaScript e TypeScript por enquanto, então esses arquivos foram listados mas não examinados.",
+    coverage_note: "Os achados cobrem só as linguagens analisadas.",
+    no_source_files: "Nenhum arquivo de código encontrado.",
     uses_word: "usos",
     use_word: "uso",
 
@@ -347,6 +362,25 @@ impl Ui {
             ));
         }
         line
+    }
+
+    /// "1 file", "12 files" / "1 arquivo", "12 arquivos".
+    pub fn files_count(&self, n: usize) -> String {
+        match (self.pt(), n) {
+            (false, 1) => "1 file".into(),
+            (false, n) => format!("{n} files"),
+            (true, 1) => "1 arquivo".into(),
+            (true, n) => format!("{n} arquivos"),
+        }
+    }
+
+    /// "2 languages detected" / "2 linguagens detectadas".
+    pub fn languages_detected(&self, n: usize) -> String {
+        if self.pt() {
+            format!("{n} linguagens detectadas")
+        } else {
+            format!("{n} languages detected")
+        }
     }
 
     pub fn tooltip_uses(&self, n: usize, pct: f32) -> String {

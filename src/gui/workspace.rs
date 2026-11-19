@@ -3,9 +3,10 @@
 //! dashboard and its findings by tabs. Layout follows the window width.
 
 use crate::ui_text::Ui;
-use agentq::analysis::{Analysis, analyze_directory};
+use agentq::analysis::{Analysis, analyze_directory, is_analyzed};
 use agentq::assess::{Assessment, Urgency};
 use agentq::config::Settings;
+use agentq::detect::Language;
 use agentq::finding::QuantumRisk;
 use agentq::i18n::Lang;
 use agentq::recents::{Kind, Recent, Recents, Summary, project_name};
@@ -47,6 +48,8 @@ enum Scan {
         summary: Summary,
         /// Most urgent first.
         findings: Vec<Assessment>,
+        /// Source languages found, most files first.
+        languages: Vec<(Language, usize)>,
     },
 }
 
@@ -299,12 +302,32 @@ fn running(project: &Project, pal: Pal) -> AnyElement {
         .into_any_element()
 }
 
-/// Horizontal bars: label, track with a proportional fill, count.
-fn bars(rows: Vec<(String, usize, Hsla)>, pal: Pal) -> AnyElement {
-    let max = rows.iter().map(|r| r.1).max().unwrap_or(1).max(1) as f32;
+/// How many findings fall in each urgency: high, medium, low, none.
+type Mix = [usize; 4];
+
+fn slot(urgency: Urgency) -> usize {
+    match urgency {
+        Urgency::High => 0,
+        Urgency::Medium => 1,
+        Urgency::Low => 2,
+        Urgency::None => 3,
+    }
+}
+
+/// Horizontal bars: label, a track whose fill is as long as the count and is
+/// split by urgency, and the count.
+fn bars(rows: Vec<(String, Mix)>, pal: Pal) -> AnyElement {
+    let colors = [pal.red, pal.orange, pal.yellow, pal.green];
+    let max = rows
+        .iter()
+        .map(|(_, mix)| mix.iter().sum::<usize>())
+        .max()
+        .unwrap_or(1)
+        .max(1) as f32;
     v_flex()
         .gap_3()
-        .children(rows.into_iter().map(|(label, n, color)| {
+        .children(rows.into_iter().map(|(label, mix)| {
+            let n: usize = mix.iter().sum();
             h_flex()
                 .gap_3()
                 .items_center()
@@ -318,11 +341,19 @@ fn bars(rows: Vec<(String, usize, Hsla)>, pal: Pal) -> AnyElement {
                         .rounded_full()
                         .bg(pal.border)
                         .child(
-                            div()
+                            h_flex()
                                 .h_full()
+                                .w(relative(n as f32 / max))
                                 .rounded_full()
-                                .bg(color)
-                                .w(relative(n as f32 / max)),
+                                .overflow_hidden()
+                                .children(mix.iter().enumerate().filter(|(_, c)| **c > 0).map(
+                                    |(i, c)| {
+                                        div()
+                                            .h_full()
+                                            .bg(colors[i])
+                                            .w(relative(*c as f32 / n as f32))
+                                    },
+                                )),
                         ),
                 )
                 .child(
@@ -334,6 +365,82 @@ fn bars(rows: Vec<(String, usize, Hsla)>, pal: Pal) -> AnyElement {
                         .child(n.to_string()),
                 )
         }))
+        .into_any_element()
+}
+
+/// The source languages found, and a warning for the ones agentq does not
+/// analyze yet.
+fn languages_block(languages: &[(Language, usize)], pal: Pal) -> AnyElement {
+    if languages.is_empty() {
+        return div()
+            .text_sm()
+            .text_color(pal.muted)
+            .child(pal.ui.no_source_files)
+            .into_any_element();
+    }
+    let unsupported = languages.iter().any(|(l, _)| !is_analyzed(*l));
+    let chips = languages.iter().map(|(language, count)| {
+        let analyzed = is_analyzed(*language);
+        let (name, icon) = match language {
+            Language::JavaScriptTypeScript => ("JavaScript / TypeScript", "typescript"),
+            Language::Python => ("Python", "python"),
+            Language::Java => ("Java", "java"),
+            Language::Go => ("Go", "go"),
+        };
+        h_flex()
+            .id(("language", *language as usize))
+            .gap_2p5()
+            .px_3()
+            .py_2()
+            .items_center()
+            .rounded_lg()
+            .border_1()
+            .border_color(pal.border)
+            .text_sm()
+            .when(!analyzed, |s| {
+                s.tooltip(tip(pal.ui.not_analyzed_hint.into()))
+            })
+            .child(
+                img(format!("icons/{icon}.svg"))
+                    .size(px(16.))
+                    .flex_shrink_0(),
+            )
+            .child(div().font_medium().child(name))
+            .child(
+                div()
+                    .text_color(pal.muted)
+                    .child(pal.ui.files_count(*count)),
+            )
+            .when(!analyzed, |s| {
+                s.child(
+                    h_flex()
+                        .gap_1p5()
+                        .items_center()
+                        .text_color(pal.yellow)
+                        .child(Icon::new(Lucide::TriangleAlert).size_4())
+                        .child(pal.ui.not_analyzed),
+                )
+            })
+    });
+    v_flex()
+        .gap_3()
+        .when(languages.len() > 1, |s| {
+            s.child(
+                div()
+                    .text_sm()
+                    .text_color(pal.muted)
+                    .child(pal.ui.languages_detected(languages.len())),
+            )
+        })
+        .child(h_flex().flex_wrap().gap_3().children(chips))
+        .when(unsupported, |s| {
+            s.child(
+                div()
+                    .text_sm()
+                    .text_color(pal.muted)
+                    .child(pal.ui.coverage_note),
+            )
+        })
         .into_any_element()
 }
 
@@ -553,6 +660,14 @@ impl Workspace {
 
     fn finish_scan(&mut self, path: &Path, analysis: Analysis, cx: &mut Context<Self>) {
         let summary = Summary::from_analysis(&analysis);
+        let mut languages: Vec<(Language, usize)> = Vec::new();
+        for (_, language) in &analysis.files {
+            match languages.iter_mut().find(|(l, _)| l == language) {
+                Some((_, n)) => *n += 1,
+                None => languages.push((*language, 1)),
+            }
+        }
+        languages.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
         let mut findings = analysis.assessments;
         findings.sort_by(|a, b| {
             b.urgency.cmp(&a.urgency).then_with(|| {
@@ -560,7 +675,11 @@ impl Workspace {
             })
         });
         if let Some(project) = self.open.iter_mut().find(|p| p.path == path) {
-            project.scan = Scan::Done { summary, findings };
+            project.scan = Scan::Done {
+                summary,
+                findings,
+                languages,
+            };
             project.selected = 0;
         }
         self.recents.record(path, summary);
@@ -1345,7 +1464,12 @@ impl Workspace {
         let Some(project) = self.current() else {
             return empty(pal.ui.no_project_open, pal.ui.pick_project, pal);
         };
-        let Scan::Done { summary, findings } = &project.scan else {
+        let Scan::Done {
+            summary,
+            findings,
+            languages,
+        } = &project.scan
+        else {
             return running(project, pal);
         };
         let narrow = main_w < 640.;
@@ -1506,54 +1630,35 @@ impl Workspace {
         };
 
         // Where, what and why.
-        let mut per_file: BTreeMap<String, (usize, Urgency)> = BTreeMap::new();
-        let mut by_purpose: BTreeMap<&'static str, (usize, Urgency)> = BTreeMap::new();
-        let mut by_algo: BTreeMap<String, (usize, Urgency)> = BTreeMap::new();
+        let mut per_file: BTreeMap<String, Mix> = BTreeMap::new();
+        let mut by_purpose: BTreeMap<&'static str, Mix> = BTreeMap::new();
+        let mut by_algo: BTreeMap<String, Mix> = BTreeMap::new();
         for a in findings {
-            let f = per_file
+            let i = slot(a.urgency);
+            per_file
                 .entry(rel(&a.finding.file, &project.path))
-                .or_insert((0, a.urgency));
-            f.0 += 1;
-            f.1 = f.1.max(a.urgency);
-            let q = by_purpose
+                .or_default()[i] += 1;
+            by_purpose
                 .entry(pal.lang.purpose(a.finding.purpose))
-                .or_insert((0, a.urgency));
-            q.0 += 1;
-            q.1 = q.1.max(a.urgency);
-            let g = by_algo
-                .entry(a.algorithm_name.clone())
-                .or_insert((0, a.urgency));
-            g.0 += 1;
-            g.1 = g.1.max(a.urgency);
+                .or_default()[i] += 1;
+            by_algo.entry(a.algorithm_name.clone()).or_default()[i] += 1;
         }
-        let mut files: Vec<_> = per_file.into_iter().collect();
-        files.sort_by_key(|(_, (n, _))| std::cmp::Reverse(*n));
-        let mut purposes: Vec<_> = by_purpose.into_iter().collect();
-        purposes.sort_by_key(|(_, (n, _))| std::cmp::Reverse(*n));
-        let mut algos: Vec<_> = by_algo.into_iter().collect();
-        algos.sort_by_key(|(_, (n, _))| std::cmp::Reverse(*n));
-
-        let file_bars = bars(
-            files
-                .into_iter()
-                .take(6)
-                .map(|(l, (n, r))| (l, n, pal.urgency(r)))
-                .collect(),
-            pal,
-        );
-        let algo_bars = bars(
-            algos
-                .into_iter()
-                .take(6)
-                .map(|(l, (n, r))| (l, n, pal.urgency(r)))
-                .collect(),
-            pal,
-        );
+        let ranked = |map: Vec<(String, Mix)>, take: usize| {
+            let mut rows = map;
+            rows.sort_by_key(|(_, mix)| std::cmp::Reverse(mix.iter().sum::<usize>()));
+            rows.truncate(take);
+            rows
+        };
+        let file_bars = bars(ranked(per_file.into_iter().collect(), 6), pal);
+        let algo_bars = bars(ranked(by_algo.into_iter().collect(), 6), pal);
         let purpose_bars = bars(
-            purposes
-                .into_iter()
-                .map(|(l, (n, r))| (l.to_string(), n, pal.urgency(r)))
-                .collect(),
+            ranked(
+                by_purpose
+                    .into_iter()
+                    .map(|(l, m)| (l.to_string(), m))
+                    .collect(),
+                usize::MAX,
+            ),
             pal,
         );
 
@@ -1567,6 +1672,11 @@ impl Workspace {
             .pb_12()
             .gap_12()
             .child(head)
+            .child(section(
+                pal.ui.languages_title,
+                pal,
+                languages_block(languages, pal),
+            ))
             .child(section(pal.ui.migrate_first, pal, migrate))
             .child(
                 h_flex()
