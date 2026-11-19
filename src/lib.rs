@@ -10,5 +10,7 @@ pub mod knowledge;
 pub mod modules;
 pub mod parse;
 pub mod purpose;
+pub mod recents;
 pub mod report;
+pub mod schedule;
 pub mod tui;
