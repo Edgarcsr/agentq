@@ -32,7 +32,6 @@ pub struct Ui {
     pub nothing_open: &'static str,
     pub language_tip: &'static str,
     pub languages: &'static str,
-    pub close: &'static str,
     pub choose: &'static str,
 
     pub dashboard: &'static str,
@@ -76,10 +75,16 @@ pub struct Ui {
     pub schedule_a_scan: &'static str,
     pub project: &'static str,
     pub choose_other: &'static str,
-    pub run_in: &'static str,
+    pub at_time: &'static str,
+    pub at_time_hint: &'static str,
+    pub remove_project: &'static str,
+    pub remove_analysis: &'static str,
+    pub toast_analysis_removed: &'static str,
+    pub show_dates: &'static str,
+    pub hide_dates: &'static str,
+    pub toast_project_removed: &'static str,
     pub repeat: &'static str,
     pub cancel: &'static str,
-    pub delays: [&'static str; 4],
 
     pub toast_scan_done: &'static str,
     pub toast_scan_risks: &'static str,
@@ -111,13 +116,12 @@ static EN: Ui = Ui {
 
     projects: "Projects",
     projects_tip: "All projects and scheduled scans",
-    open_caption: "Open",
+    open_caption: "History",
     open_folder: "Open folder",
     open_folder_tip: "Open a folder and scan it",
-    nothing_open: "Nothing open.",
+    nothing_open: "No projects yet.",
     language_tip: "Language of the advice and the interface",
     languages: "Languages",
-    close: "Close",
     choose: "Choose",
 
     dashboard: "Dashboard",
@@ -161,10 +165,16 @@ static EN: Ui = Ui {
     schedule_a_scan: "Schedule a scan",
     project: "Project",
     choose_other: "Choose another folder…",
-    run_in: "Run in",
+    at_time: "Time",
+    at_time_hint: "Runs the next time the clock reads this. Type the digits, or use the arrows.",
+    remove_project: "Remove from history",
+    remove_analysis: "Remove this analysis",
+    toast_analysis_removed: "Analysis removed",
+    show_dates: "Show dates",
+    hide_dates: "Hide dates",
+    toast_project_removed: "Removed from history",
     repeat: "Repeat",
     cancel: "Cancel",
-    delays: ["15 min", "1 hour", "6 hours", "24 hours"],
 
     toast_scan_done: "Scan finished",
     toast_scan_risks: "Scan finished with risks",
@@ -179,7 +189,7 @@ static EN: Ui = Ui {
 static PT: Ui = Ui {
     is_pt: true,
     now: "Agora",
-    just_now: "Agora há pouco",
+    just_now: "Há pouco",
     pending: "Pendente",
     running: "Em execução",
     done: "Concluído",
@@ -196,13 +206,12 @@ static PT: Ui = Ui {
 
     projects: "Projetos",
     projects_tip: "Todos os projetos e scans agendados",
-    open_caption: "Abertos",
+    open_caption: "Histórico",
     open_folder: "Abrir pasta",
     open_folder_tip: "Abrir uma pasta e escaneá-la",
-    nothing_open: "Nada aberto.",
+    nothing_open: "Nenhum projeto ainda.",
     language_tip: "Idioma dos conselhos e da interface",
     languages: "Idiomas",
-    close: "Fechar",
     choose: "Escolher",
 
     dashboard: "Painel",
@@ -246,10 +255,16 @@ static PT: Ui = Ui {
     schedule_a_scan: "Agendar um scan",
     project: "Projeto",
     choose_other: "Escolher outra pasta…",
-    run_in: "Executar em",
+    at_time: "Horário",
+    at_time_hint: "Roda na próxima vez que o relógio marcar esse horário. Digite os números ou use as setas.",
+    remove_project: "Remover do histórico",
+    remove_analysis: "Remover esta análise",
+    toast_analysis_removed: "Análise removida",
+    show_dates: "Mostrar datas",
+    hide_dates: "Ocultar datas",
+    toast_project_removed: "Removido do histórico",
     repeat: "Repetir",
     cancel: "Cancelar",
-    delays: ["15 min", "1 hora", "6 horas", "24 horas"],
 
     toast_scan_done: "Scan concluído",
     toast_scan_risks: "Scan concluído com riscos",
@@ -295,6 +310,89 @@ impl Ui {
             (Repeat::Once, true) => "Uma vez",
             (Repeat::Daily, true) => "Diário",
             (Repeat::Weekly, true) => "Semanal",
+        }
+    }
+
+    /// The exact moment in the local time zone, written the way date-fns
+    /// writes its long form (`PPpp`): "Nov 26, 2026 at 3:45:12 PM" in English,
+    /// "26 de nov. de 2026 às 15:45:12" in Portuguese.
+    pub fn exact(&self, at: u64) -> String {
+        use chrono::{Datelike, Local, TimeZone};
+        const PT_MONTHS: [&str; 12] = [
+            "jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.",
+            "dez.",
+        ];
+        let Some(moment) = i64::try_from(at)
+            .ok()
+            .and_then(|at| Local.timestamp_opt(at, 0).single())
+        else {
+            return String::new();
+        };
+        if self.pt() {
+            format!(
+                "{} de {} de {} às {}",
+                moment.day(),
+                PT_MONTHS[moment.month0() as usize],
+                moment.year(),
+                moment.format("%H:%M:%S")
+            )
+        } else {
+            moment.format("%b %-d, %Y at %-I:%M:%S %p").to_string()
+        }
+    }
+
+    /// A short date for a list: "Nov 26, 3:45 PM", "26 nov., 15:45".
+    pub fn short_date(&self, at: u64) -> String {
+        use chrono::{Datelike, Local, TimeZone};
+        const PT_MONTHS: [&str; 12] = [
+            "jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.",
+            "dez.",
+        ];
+        let Some(moment) = i64::try_from(at)
+            .ok()
+            .and_then(|at| Local.timestamp_opt(at, 0).single())
+        else {
+            return String::new();
+        };
+        if self.pt() {
+            format!(
+                "{} {}, {}",
+                moment.day(),
+                PT_MONTHS[moment.month0() as usize],
+                moment.format("%H:%M")
+            )
+        } else {
+            moment.format("%b %-d, %-I:%M %p").to_string()
+        }
+    }
+
+    /// "Scanning · started 5m ago", "Analisando · iniciado há 5 min".
+    pub fn scanning_since(&self, secs: Option<u64>) -> String {
+        let (head, fresh, began) = if self.pt() {
+            ("Analisando", "acabou de começar", "iniciado")
+        } else {
+            ("Scanning", "just started", "started")
+        };
+        match secs {
+            Some(s) if s >= 60 => format!("{head} · {began} {}", self.ago(s)),
+            _ => format!("{head} · {fresh}"),
+        }
+    }
+
+    /// "Analyzed 5m ago", "Analisado há 5 min".
+    pub fn analyzed(&self, secs: u64) -> String {
+        if secs < 60 {
+            return if self.pt() {
+                "Analisado agora há pouco"
+            } else {
+                "Analyzed just now"
+            }
+            .to_string();
+        }
+        if self.pt() {
+            format!("Analisado {}", self.ago(secs))
+        } else {
+            format!("Analyzed {}", self.ago(secs))
         }
     }
 

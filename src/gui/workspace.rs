@@ -4,27 +4,32 @@
 
 use crate::ui_text::Ui;
 use agentq::analysis::{Analysis, analyze_directory, is_analyzed};
-use agentq::assess::{Assessment, Urgency};
+use agentq::assess::{Assessment, Urgency, relocalize};
 use agentq::config::Settings;
 use agentq::detect::Language;
 use agentq::finding::QuantumRisk;
 use agentq::i18n::Lang;
+use agentq::knowledge::KnowledgeBase;
 use agentq::recents::{Kind, Recent, Recents, Summary, project_name};
-use agentq::schedule::{Repeat, Schedules};
+use agentq::schedule::{Repeat, Schedules, next_at};
+use agentq::snapshot::Snapshot;
+use chrono::Timelike;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::chart::PieChart;
 use gpui_kit::component::notification::{Notification, NotificationType};
 use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::time_field::{HourCycle, TimeField, TimeFieldState};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IconName, ResizableState, Sizable, StyledExt, WindowExt,
     h_flex, h_resizable, resizable_panel, v_flex,
 };
 use gpui_kit::{
-    Anchor, AnyElement, App, AppContext, Context, Hsla, InteractiveElement, IntoElement,
-    ParentElement, PathPromptOptions, Render, StatefulInteractiveElement, Styled, Window,
-    WindowControlArea, div, hsla, img, prelude::FluentBuilder as _, px, relative,
+    Anchor, Animation, AnimationExt, AnyElement, App, AppContext, Context, Hsla,
+    InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Render,
+    StatefulInteractiveElement, Styled, Window, WindowControlArea, div, ease_in_out, hsla, img,
+    prelude::FluentBuilder as _, px, radians, relative,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -57,6 +62,10 @@ struct Project {
     path: PathBuf,
     scan: Scan,
     selected: usize,
+    /// When the analysis on screen was made; `None` while it is the first one.
+    analyzed_at: Option<u64>,
+    /// When the scan under way started, to tell the user how long ago.
+    scan_started: Option<u64>,
 }
 
 impl Project {
@@ -78,11 +87,10 @@ enum Page {
 /// The "schedule a scan" dialog while it is open.
 struct Draft {
     path: Option<PathBuf>,
-    minutes: u64,
+    /// The time of day the user types in.
+    time: gpui_kit::Entity<TimeFieldState>,
     repeat: Repeat,
 }
-
-const DELAYS: [u64; 4] = [15, 60, 360, 1440];
 
 pub struct Workspace {
     open: Vec<Project>,
@@ -90,10 +98,15 @@ pub struct Workspace {
     page: Page,
     recents: Recents,
     schedules: Schedules,
+    /// When each saved analysis of a project was made, newest first.
+    versions: HashMap<PathBuf, Vec<u64>>,
+    /// Projects whose dates are unfolded in the sidebar.
+    expanded: HashSet<PathBuf>,
+    /// How many times each project was folded or unfolded; the arrow only
+    /// animates after the first, so nothing moves when the app starts.
+    fold_turns: HashMap<PathBuf, u32>,
     draft: Option<Draft>,
     lang_menu: bool,
-    /// Rescans that are only a side effect (a language change): no toast.
-    quiet: HashSet<PathBuf>,
     /// How the findings list and its details share the width.
     split: gpui_kit::Entity<ResizableState>,
     kinds: HashMap<PathBuf, Kind>,
@@ -587,14 +600,20 @@ impl Workspace {
             page: Page::Projects,
             recents: Recents::load(),
             schedules: Schedules::load(),
+            versions: HashMap::new(),
+            expanded: HashSet::new(),
+            fold_turns: HashMap::new(),
             draft: None,
             lang_menu: false,
-            quiet: HashSet::new(),
             split: cx.new(|_| ResizableState::default()),
             kinds: HashMap::new(),
             toasts: Vec::new(),
             lang,
         };
+        for recent in &workspace.recents.projects {
+            let found = Snapshot::versions(&recent.path);
+            workspace.versions.insert(recent.path.clone(), found);
+        }
         if let Some(path) = initial {
             workspace.open_project(path, cx);
         }
@@ -634,14 +653,44 @@ impl Workspace {
         }
         self.recents.touch(&path);
         let _ = self.recents.save();
+        // What was found the last time is shown at once; scanning again is
+        // up to the user.
+        let saved = Snapshot::load(&path);
+        let (scan, analyzed_at) = match saved {
+            Some(snap) => (
+                Scan::Done {
+                    summary: snap.summary,
+                    findings: self.in_current_language(snap.findings, &snap.lang),
+                    languages: snap.languages,
+                },
+                Some(snap.taken_at),
+            ),
+            None => (Scan::Running, None),
+        };
+        let needs_scan = matches!(scan, Scan::Running);
         self.open.push(Project {
             path: path.clone(),
-            scan: Scan::Running,
+            scan,
             selected: 0,
+            analyzed_at,
+            scan_started: None,
         });
         self.active = Some(self.open.len() - 1);
-        self.scan(path, cx);
+        if needs_scan {
+            self.scan(path, cx);
+        }
         cx.notify();
+    }
+
+    /// The advice of a saved analysis, in the language of the interface. It is
+    /// written again from the findings, which takes no time, so a language
+    /// change never costs a scan.
+    fn in_current_language(&self, findings: Vec<Assessment>, saved_in: &str) -> Vec<Assessment> {
+        if saved_in == self.lang.code() {
+            findings
+        } else {
+            relocalize(findings, KnowledgeBase::embedded(), self.lang)
+        }
     }
 
     /// Starts every scheduled scan that is due, in the background, without
@@ -678,6 +727,8 @@ impl Workspace {
                         path: item.path.clone(),
                         scan: Scan::Running,
                         selected: 0,
+                        analyzed_at: None,
+                        scan_started: None,
                     });
                     self.scan(item.path.clone(), cx);
                 }
@@ -691,6 +742,7 @@ impl Workspace {
     fn scan(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if let Some(project) = self.open.iter_mut().find(|p| p.path == path) {
             project.scan = Scan::Running;
+            project.scan_started = Some(now_secs());
         }
         let lang = self.lang;
         let background = cx.background_spawn({
@@ -722,6 +774,19 @@ impl Workspace {
                 (&a.finding.file, a.finding.line).cmp(&(&b.finding.file, b.finding.line))
             })
         });
+        let taken_at = now_secs();
+        // Keep this analysis: it is what the history shows next time.
+        let _ = Snapshot {
+            path: path.to_path_buf(),
+            taken_at,
+            lang: self.lang.code().to_string(),
+            summary,
+            languages: languages.clone(),
+            findings: findings.clone(),
+        }
+        .save();
+        self.versions
+            .insert(path.to_path_buf(), Snapshot::versions(path));
         if let Some(project) = self.open.iter_mut().find(|p| p.path == path) {
             project.scan = Scan::Done {
                 summary,
@@ -729,13 +794,10 @@ impl Workspace {
                 languages,
             };
             project.selected = 0;
+            project.analyzed_at = Some(taken_at);
         }
         self.recents.record(path, summary);
         let _ = self.recents.save();
-        if self.quiet.remove(path) {
-            cx.notify();
-            return;
-        }
         let ui = Ui::of(self.lang);
         let (kind, title) = if summary.broken > 0 {
             (NotificationType::Warning, ui.toast_scan_risks)
@@ -807,15 +869,12 @@ impl Workspace {
         let mut settings = Settings::load();
         settings.language = Some(lang.code().to_string());
         let _ = settings.save();
-        let paths: Vec<PathBuf> = self
-            .open
-            .iter()
-            .filter(|p| p.status() == Status::Done)
-            .map(|p| p.path.clone())
-            .collect();
-        for path in paths {
-            self.quiet.insert(path.clone());
-            self.scan(path, cx);
+        // Only the words change, so the open analyses are written again in
+        // the new language instead of being scanned again.
+        for project in &mut self.open {
+            if let Scan::Done { findings, .. } = &mut project.scan {
+                *findings = relocalize(std::mem::take(findings), KnowledgeBase::embedded(), lang);
+            }
         }
         self.toast(NotificationType::Info, Ui::of(lang).toast_language, "");
         cx.notify();
@@ -826,10 +885,23 @@ impl Workspace {
         cx.notify();
     }
 
-    fn open_schedule_dialog(&mut self, path: Option<PathBuf>, cx: &mut Context<Self>) {
+    fn open_schedule_dialog(
+        &mut self,
+        path: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Starts at the next full hour, which the user then edits.
+        let start = chrono::Local::now() + chrono::Duration::hours(1);
+        let start = chrono::NaiveTime::from_hms_opt(start.hour(), 0, 0).unwrap_or_default();
+        let time = cx.new(|cx| {
+            let mut state = TimeFieldState::new(window, cx).hour_cycle(HourCycle::H23);
+            state.set_time(start, window, cx);
+            state
+        });
         self.draft = Some(Draft {
             path,
-            minutes: 60,
+            time,
             repeat: Repeat::Once,
         });
         cx.notify();
@@ -838,18 +910,23 @@ impl Workspace {
     fn confirm_schedule(&mut self, cx: &mut Context<Self>) {
         if let Some(Draft {
             path: Some(path),
-            minutes,
+            time,
             repeat,
         }) = self.draft.take()
         {
-            self.schedules.add(&path, now_secs() + minutes * 60, repeat);
+            let time = time.read(cx).time();
+            let now = now_secs();
+            let Some(at) = next_at(time.hour(), time.minute(), now) else {
+                return;
+            };
+            self.schedules.add(&path, at, repeat);
             self.toast(
                 NotificationType::Info,
                 Ui::of(self.lang).toast_scheduled,
                 format!(
                     "{} · {} · {}",
                     project_name(&path),
-                    Ui::of(self.lang).until(now_secs() + minutes * 60, now_secs()),
+                    time.format("%H:%M"),
                     Ui::of(self.lang).repeat_label(repeat)
                 ),
             );
@@ -858,6 +935,94 @@ impl Workspace {
             let _ = self.schedules.save();
             let _ = self.recents.save();
         }
+        cx.notify();
+    }
+
+    /// Drops one saved analysis of a project; the project and its other dates
+    /// stay. If it was the one on screen, the latest one that is left takes
+    /// its place.
+    fn forget_analysis(&mut self, path: &Path, at: u64, cx: &mut Context<Self>) {
+        Snapshot::remove_at(path, at);
+        let left = Snapshot::versions(path);
+        let viewing = self
+            .open
+            .iter()
+            .any(|p| p.path == path && p.analyzed_at == Some(at));
+        if left.len() < 2 {
+            self.expanded.remove(path);
+        }
+        self.versions.insert(path.to_path_buf(), left.clone());
+        if viewing && let Some(latest) = left.first() {
+            self.view_snapshot(path.to_path_buf(), *latest, cx);
+        }
+        self.toast(
+            NotificationType::Info,
+            Ui::of(self.lang).toast_analysis_removed,
+            Ui::of(self.lang).exact(at),
+        );
+        cx.notify();
+    }
+
+    /// Shows the analysis made at `at`, as it was, without scanning again.
+    fn view_snapshot(&mut self, path: PathBuf, at: u64, cx: &mut Context<Self>) {
+        let Some(snap) = Snapshot::load_at(&path, at) else {
+            return;
+        };
+        self.page = Page::Dashboard;
+        let scan = Scan::Done {
+            summary: snap.summary,
+            findings: self.in_current_language(snap.findings, &snap.lang),
+            languages: snap.languages,
+        };
+        match self.open.iter().position(|p| p.path == path) {
+            Some(index) => {
+                let project = &mut self.open[index];
+                project.scan = scan;
+                project.selected = 0;
+                project.analyzed_at = Some(at);
+                self.active = Some(index);
+            }
+            None => {
+                self.open.push(Project {
+                    path,
+                    scan,
+                    selected: 0,
+                    analyzed_at: Some(at),
+                    scan_started: None,
+                });
+                self.active = Some(self.open.len() - 1);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Drops a project from the history, with any scans planned for it.
+    fn forget_project(&mut self, path: &Path, cx: &mut Context<Self>) {
+        let planned: Vec<u64> = self
+            .schedules
+            .items
+            .iter()
+            .filter(|s| s.path == path)
+            .map(|s| s.id)
+            .collect();
+        for id in planned {
+            self.schedules.cancel(id);
+        }
+        self.recents.remove(path);
+        Snapshot::remove(path);
+        self.versions.remove(path);
+        self.expanded.remove(path);
+        self.fold_turns.remove(path);
+        if let Some(index) = self.open.iter().position(|p| p.path == path) {
+            self.close_project(index, cx);
+        }
+        let _ = self.schedules.save();
+        let _ = self.recents.save();
+        self.toast(
+            NotificationType::Info,
+            Ui::of(self.lang).toast_project_removed,
+            project_name(path),
+        );
         cx.notify();
     }
 
@@ -891,27 +1056,143 @@ impl Workspace {
 
     // ---- sidebar -----------------------------------------------------------
 
-    /// One open project: its kind, its name, and where its scan stands.
-    fn open_row(
+    /// The saved analyses of a project, newest first.
+    fn dates_of(&self, path: &Path) -> &[u64] {
+        self.versions.get(path).map_or(&[], Vec::as_slice)
+    }
+
+    /// Opens or closes the list of dates under a project.
+    fn toggle_fold(&mut self, path: &Path, cx: &mut Context<Self>) {
+        if !self.expanded.remove(path) {
+            self.expanded.insert(path.to_path_buf());
+        }
+        *self.fold_turns.entry(path.to_path_buf()).or_insert(0) += 1;
+        cx.notify();
+    }
+
+    /// The arrow of a project that has more than one analysis. It points right
+    /// when folded and turns down, smoothly, when the dates are shown.
+    fn chevron(&self, i: usize, path: &Path, pal: Pal, cx: &mut Context<Self>) -> AnyElement {
+        use std::f32::consts::FRAC_PI_2;
+        let open = self.expanded.contains(path);
+        let turns = self.fold_turns.get(path).copied().unwrap_or(0);
+        let (from, to) = if open {
+            (0., FRAC_PI_2)
+        } else {
+            (FRAC_PI_2, 0.)
+        };
+        let arrow = Icon::new(IconName::ChevronRight).size_4();
+        let arrow = if turns == 0 {
+            arrow.rotate(radians(to)).into_any_element()
+        } else {
+            // A new id for each turn makes the animation start again.
+            arrow
+                .with_animation(
+                    ("fold-turn", turns as usize),
+                    Animation::new(Duration::from_millis(160)).with_easing(ease_in_out),
+                    move |icon, delta| icon.rotate(radians(from + (to - from) * delta)),
+                )
+                .into_any_element()
+        };
+        let path = path.to_path_buf();
+        div()
+            .id(("fold", i))
+            .w(px(20.))
+            .h(px(20.))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_sm()
+            .text_color(pal.muted)
+            .hover(|s| s.bg(pal.active).text_color(pal.fg))
+            .tooltip(tip(if open {
+                pal.ui.hide_dates
+            } else {
+                pal.ui.show_dates
+            }
+            .to_string()))
+            .child(arrow)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.toggle_fold(&path, cx);
+            }))
+            .into_any_element()
+    }
+
+    /// One saved analysis of a project, listed under it by date.
+    fn date_row(
+        &self,
+        key: usize,
+        path: &Path,
+        at: u64,
+        pal: Pal,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let viewing = self.page != Page::Projects
+            && self
+                .current()
+                .is_some_and(|p| p.path == path && p.analyzed_at == Some(at));
+        let path = path.to_path_buf();
+        let forget = (path.to_path_buf(), at);
+        h_flex()
+            .id(("date", key))
+            .group("date-row")
+            .gap_2p5()
+            .pl_12()
+            .pr_3()
+            .h(px(26.))
+            .rounded_md()
+            .items_center()
+            .cursor_pointer()
+            .text_xs()
+            .text_color(if viewing { pal.fg } else { pal.muted })
+            .when(viewing, |s| s.bg(pal.active))
+            .hover(|s| s.bg(pal.hover).text_color(pal.fg))
+            .tooltip(tip(pal.ui.exact(at)))
+            .child(div().flex_1().truncate().child(pal.ui.short_date(at)))
+            .child(
+                div()
+                    .w(px(20.))
+                    .flex_shrink_0()
+                    .opacity(0.)
+                    .group_hover("date-row", |s| s.opacity(1.))
+                    .child(
+                        Button::new(("forget-date", key))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Close)
+                            .tooltip(pal.ui.remove_analysis)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.forget_analysis(&forget.0, forget.1, cx);
+                            })),
+                    ),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.view_snapshot(path.clone(), at, cx);
+            }))
+            .into_any_element()
+    }
+
+    /// One project of the history: its kind, its name, and where its scan
+    /// stands when it is open. The one being looked at is highlighted.
+    fn history_row(
         &self,
         i: usize,
-        p: &Project,
+        r: &Recent,
         pal: Pal,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let active = self.active == Some(i) && self.page != Page::Projects;
-        let hint = format!(
-            "{} · {}",
-            p.path.display(),
-            match p.status() {
-                Status::Running => "scanning",
-                Status::Done => "done",
-                Status::Pending => "pending",
-            }
-        );
+        let open = self.open.iter().find(|p| p.path == r.path);
+        let active =
+            self.page != Page::Projects && self.current().is_some_and(|p| p.path == r.path);
+        let status = open.map(|p| p.status());
+        let hint = r.path.display().to_string();
+        let (open_path, forget_path) = (r.path.clone(), r.path.clone());
         h_flex()
-            .id(("open", i))
-            .group("open-row")
+            .id(("history", i))
+            .group("history-row")
             .gap_2p5()
             .pl_3()
             .pr_1()
@@ -920,60 +1201,79 @@ impl Workspace {
             .items_center()
             .cursor_pointer()
             .text_sm()
-            .text_color(if active { pal.fg } else { pal.muted })
+            .text_color(if active || open.is_some() {
+                pal.fg
+            } else {
+                pal.muted
+            })
             .when(active, |s| s.bg(pal.active))
             .hover(|s| s.bg(pal.hover).text_color(pal.fg))
             .tooltip(tip(hint))
-            .child(kind_icon(self.kind_of(&p.path)))
-            .child(
+            .child(kind_icon(self.kind_of(&r.path)))
+            .child(div().flex_1().min_w_0().truncate().child(r.name()))
+            // The last slot: the spinner while it scans (with when it
+            // began on hover), the remove button otherwise.
+            .child(if status == Some(Status::Running) {
+                let started = open.and_then(|p| p.scan_started);
+                let since = started.map(|at| now_secs().saturating_sub(at));
+                let mut text = pal.ui.scanning_since(since);
+                if let Some(at) = started {
+                    text = format!("{text}\n{}", pal.ui.exact(at));
+                }
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .child(project_name(&p.path)),
-            )
-            .child(
-                div()
-                    .w(px(16.))
+                    .id(("scanning", i))
+                    .w(px(20.))
+                    .h(px(20.))
                     .flex_shrink_0()
                     .flex()
+                    .items_center()
                     .justify_center()
-                    .when(p.status() != Status::Done, |s| {
-                        s.child(status_icon(p.status(), pal))
-                    }),
-            )
-            .child(
+                    .tooltip(tip(text))
+                    .child(status_icon(Status::Running, pal))
+                    .into_any_element()
+            } else if self.dates_of(&r.path).len() > 1 {
+                // A project with dates under it has no remove button of its
+                // own: each date has one.
+                self.chevron(i, &r.path, pal, cx)
+            } else {
                 div()
+                    .w(px(20.))
+                    .flex_shrink_0()
                     .opacity(0.)
-                    .group_hover("open-row", |s| s.opacity(1.))
+                    .group_hover("history-row", |s| s.opacity(1.))
                     .child(
-                        Button::new(("close", i))
+                        Button::new(("forget-side", i))
                             .ghost()
                             .xsmall()
                             .icon(IconName::Close)
-                            .tooltip(pal.ui.close)
+                            .tooltip(pal.ui.remove_project)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
-                                this.close_project(i, cx);
+                                this.forget_project(&forget_path, cx);
                             })),
-                    ),
-            )
+                    )
+                    .into_any_element()
+            })
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.active = Some(i);
-                if this.page == Page::Projects {
-                    this.page = Page::Dashboard;
+                // The row is the folder: it opens the latest analysis and
+                // also folds or unfolds the dates beneath it.
+                if this.dates_of(&open_path).len() > 1 {
+                    this.toggle_fold(&open_path, cx);
                 }
-                cx.notify();
+                this.open_project(open_path.clone(), cx);
             }))
     }
 
     fn sidebar(&self, pal: Pal, cx: &mut Context<Self>) -> impl IntoElement {
-        let open_rows = self
-            .open
-            .iter()
-            .enumerate()
-            .map(|(i, p)| self.open_row(i, p, pal, cx).into_any_element())
-            .collect::<Vec<_>>();
+        let mut history_rows: Vec<AnyElement> = Vec::new();
+        for (i, r) in self.recents.projects.iter().enumerate() {
+            history_rows.push(self.history_row(i, r, pal, cx).into_any_element());
+            if self.expanded.contains(&r.path) {
+                for (n, at) in self.dates_of(&r.path).iter().enumerate() {
+                    history_rows.push(self.date_row(i * 100 + n, &r.path, *at, pal, cx));
+                }
+            }
+        }
         let selected = self.page == Page::Projects;
 
         v_flex()
@@ -1042,8 +1342,8 @@ impl Workspace {
                     .px_2()
                     .gap_0p5()
                     .overflow_y_scroll()
-                    .children(open_rows)
-                    .when(self.open.is_empty(), |s| {
+                    .children(history_rows)
+                    .when(self.recents.projects.is_empty(), |s| {
                         s.child(
                             div()
                                 .px_3()
@@ -1210,6 +1510,11 @@ impl Workspace {
         let rescan = path
             .clone()
             .filter(|_| self.current().is_some_and(|p| p.status() == Status::Done));
+        let analyzed_at = on_project
+            .then(|| self.current().and_then(|p| p.analyzed_at))
+            .flatten();
+        let analyzed = analyzed_at.map(|at| pal.ui.analyzed(now_secs().saturating_sub(at)));
+        let analyzed_exact = analyzed_at.map(|at| pal.ui.exact(at));
 
         h_flex()
             .h(px(60.))
@@ -1229,17 +1534,22 @@ impl Workspace {
             )
             .child(
                 div()
+                    .id("header-path")
                     .flex_1()
                     .min_w_0()
                     .truncate()
                     .text_sm()
                     .text_color(pal.muted)
+                    .when_some(analyzed_exact, |s, text| s.tooltip(tip(text)))
                     .when(!compact, |s| {
-                        s.child(
-                            path.clone()
-                                .map(|p| p.display().to_string())
-                                .unwrap_or_default(),
-                        )
+                        let place = path
+                            .clone()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_default();
+                        s.child(match &analyzed {
+                            Some(when) => format!("{place} · {when}"),
+                            None => place,
+                        })
                     }),
             )
             .when_some(rescan, |s, p| {
@@ -1259,9 +1569,9 @@ impl Workspace {
                     .icon(Icon::new(Lucide::CalendarClock))
                     .label(pal.ui.schedule)
                     .tooltip(pal.ui.schedule_tip)
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.open_schedule_dialog(p.clone(), cx)),
-                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_schedule_dialog(p.clone(), window, cx)
+                    }))
             })
             .child(
                 Button::new("open-folder-top")
@@ -1294,14 +1604,15 @@ impl Workspace {
             .map(|(i, r)| {
                 let (status, summary) = self.state_of(r);
                 let path = r.path.clone();
-                let next = self
-                    .schedules
-                    .next_for(&r.path)
-                    .map(|s| pal.ui.until(s.at, now));
-                let when = match (status, next) {
-                    (Status::Running, _) => pal.ui.now.to_string(),
-                    (_, Some(n)) => n,
-                    _ => pal.ui.ago(now.saturating_sub(r.last_opened)),
+                let next = self.schedules.next_for(&r.path);
+                // The text of the column and the exact moment it stands for.
+                let (when, exact) = match (status, next) {
+                    (Status::Running, _) => (pal.ui.now.to_string(), None),
+                    (_, Some(n)) => (pal.ui.until(n.at, now), Some(pal.ui.exact(n.at))),
+                    _ => (
+                        pal.ui.ago(now.saturating_sub(r.last_opened)),
+                        Some(pal.ui.exact(r.last_opened)),
+                    ),
                 };
                 h_flex()
                     .id(("row", i))
@@ -1345,13 +1656,28 @@ impl Workspace {
                     })
                     .child(
                         div()
-                            .w(px(76.))
+                            .id(("when", i))
+                            .w(px(90.))
                             .flex_shrink_0()
+                            .whitespace_nowrap()
                             .text_right()
                             .text_sm()
                             .text_color(pal.muted)
+                            .when_some(exact, |s, text| s.tooltip(tip(text)))
                             .child(when),
                     )
+                    .child({
+                        let path = r.path.clone();
+                        Button::new(("forget", i))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Close)
+                            .tooltip(pal.ui.remove_project)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.forget_project(&path, cx);
+                            }))
+                    })
                     .on_click(
                         cx.listener(move |this, _, _, cx| this.open_project(path.clone(), cx)),
                     )
@@ -1448,13 +1774,14 @@ impl Workspace {
                             .when(wide, |s| s.child(head(pal.ui.col_issues, 170.)))
                             .child(
                                 div()
-                                    .w(px(76.))
+                                    .w(px(90.))
                                     .flex_shrink_0()
                                     .text_right()
                                     .text_xs()
                                     .text_color(pal.muted)
                                     .child(pal.ui.col_when),
-                            ),
+                            )
+                            .child(div().w(px(24.)).flex_shrink_0()),
                     )
                     .children(rows)
                     .child(
@@ -1490,8 +1817,8 @@ impl Workspace {
                                     .small()
                                     .icon(IconName::Plus)
                                     .label(pal.ui.new)
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.open_schedule_dialog(None, cx)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_schedule_dialog(None, window, cx)
                                     })),
                             ),
                     )
@@ -1903,22 +2230,6 @@ impl Workspace {
             })
             .collect::<Vec<_>>();
 
-        let delays = DELAYS
-            .iter()
-            .enumerate()
-            .map(|(i, minutes)| {
-                let m = *minutes;
-                chip(("delay", i), pal.ui.delays[i], draft.minutes == m, pal).on_click(cx.listener(
-                    move |this, _, _, cx| {
-                        if let Some(d) = this.draft.as_mut() {
-                            d.minutes = m;
-                        }
-                        cx.notify();
-                    },
-                ))
-            })
-            .collect::<Vec<_>>();
-
         let repeats = [Repeat::Once, Repeat::Daily, Repeat::Weekly]
             .into_iter()
             .enumerate()
@@ -1999,11 +2310,16 @@ impl Workspace {
                     .into_any_element(),
             ))
             .child(field(
-                pal.ui.run_in,
-                h_flex()
-                    .flex_wrap()
+                pal.ui.at_time,
+                v_flex()
                     .gap_2()
-                    .children(delays)
+                    .child(TimeField::new(&draft.time).small().w(px(110.)))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(pal.muted)
+                            .child(pal.ui.at_time_hint),
+                    )
                     .into_any_element(),
             ))
             .child(field(
