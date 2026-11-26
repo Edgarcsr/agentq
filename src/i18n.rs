@@ -380,6 +380,8 @@ texts! {
     menu_here: "Analyze this folder", "Analisar esta pasta";
     menu_settings: "Settings", "Configurações";
     menu_settings_hint: "language and logo", "idioma e logo";
+    menu_schedule: "Scheduled scans", "Scans agendados";
+    menu_schedule_hint: "run a scan at a set time", "rodar um scan em um horário";
     menu_quit: "Quit", "Sair";
     menu_select: "select", "selecionar";
     menu_choose: "choose", "escolher";
@@ -392,6 +394,30 @@ texts! {
     settings_saved_in: "saved in", "salvo em";
     settings_drag: "drag the logo to turn it", "arraste o logo para girá-lo";
     key_change: "change", "alterar";
+
+    // --- terminal interface: scheduled scans ---
+    sched_title: "scheduled scans", "scans agendados";
+    sched_empty: "Nothing scheduled. Press n to plan a scan.",
+        "Nada agendado. Pressione n para planejar um scan.";
+    sched_new_title: "new scan", "novo scan";
+    sched_project: "Project", "Projeto";
+    sched_time: "Time (HH:MM)", "Horário (HH:MM)";
+    sched_repeat: "Repeat", "Repetir";
+    sched_once: "Once", "Uma vez";
+    sched_daily: "Daily", "Diário";
+    sched_weekly: "Weekly", "Semanal";
+    sched_bad_time: "Type the time as HH:MM, from 00:00 to 23:59.",
+        "Digite o horário como HH:MM, de 00:00 a 23:59.";
+    sched_bad_path: "That folder does not exist.", "Essa pasta não existe.";
+    sched_added: "Scan scheduled for {time}", "Scan agendado para {time}";
+    sched_removed: "Schedule removed", "Agendamento removido";
+    sched_ran: "Scheduled scan finished: {project} ({uses} use(s))",
+        "Scan agendado terminou: {project} ({uses} uso(s))";
+    key_new: "new", "novo";
+    key_delete: "delete", "apagar";
+    key_next_field: "next field", "próximo campo";
+    key_save: "schedule", "agendar";
+    key_cancel: "cancel", "cancelar";
     logo_planet: "Planet", "Planeta";
     logo_lock: "Padlock", "Cadeado";
     logo_key: "Key", "Chave";
@@ -483,6 +509,8 @@ mod tests {
             (EN.footer_safe, PT_BR.footer_safe),
             (EN.footer_filters, PT_BR.footer_filters),
             (EN.status_rescanned, PT_BR.status_rescanned),
+            (EN.sched_added, PT_BR.sched_added),
+            (EN.sched_ran, PT_BR.sched_ran),
             (EN.br_folders, PT_BR.br_folders),
             (EN.cannot_open, PT_BR.cannot_open),
             (EN.risk_broken_by, PT_BR.risk_broken_by),

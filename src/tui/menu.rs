@@ -15,17 +15,25 @@ use ratatui::widgets::{Paragraph, Wrap};
 pub enum Item {
     Browse,
     Here,
+    Schedule,
     Settings,
     Quit,
 }
 
-const ITEMS: [Item; 4] = [Item::Browse, Item::Here, Item::Settings, Item::Quit];
+const ITEMS: [Item; 5] = [
+    Item::Browse,
+    Item::Here,
+    Item::Schedule,
+    Item::Settings,
+    Item::Quit,
+];
 
 /// What the menu asks the application to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Browse,
     AnalyzeHere,
+    Schedule,
     Settings,
     SwitchLanguage,
     Quit,
@@ -105,6 +113,7 @@ impl Menu {
         match ITEMS[self.selected] {
             Item::Browse => Action::Browse,
             Item::Here => Action::AnalyzeHere,
+            Item::Schedule => Action::Schedule,
             Item::Settings => Action::Settings,
             Item::Quit => Action::Quit,
         }
@@ -120,6 +129,7 @@ impl Menu {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => return Some(self.activate()),
             KeyCode::Char('b') => return Some(Action::Browse),
             KeyCode::Char('a') => return Some(Action::AnalyzeHere),
+            KeyCode::Char('c') => return Some(Action::Schedule),
             KeyCode::Char('s') => return Some(Action::Settings),
             KeyCode::Char('L') => return Some(Action::SwitchLanguage),
             _ => {}
@@ -179,7 +189,7 @@ pub fn render(frame: &mut Frame, menu: &mut Menu, lang: Lang, here: &str) {
     let [column] = Layout::horizontal([Constraint::Max(64)])
         .flex(Flex::Center)
         .areas(area);
-    let [column] = Layout::vertical([Constraint::Max(23)])
+    let [column] = Layout::vertical([Constraint::Max(24)])
         .flex(Flex::Center)
         .areas(column);
     let [head, list, hints] = Layout::vertical([
@@ -229,6 +239,10 @@ pub fn render(frame: &mut Frame, menu: &mut Menu, lang: Lang, here: &str) {
             let (label, detail) = match item {
                 Item::Browse => (t.menu_browse.to_string(), t.menu_browse_hint.to_string()),
                 Item::Here => (t.menu_here.to_string(), shorten(here, room)),
+                Item::Schedule => (
+                    t.menu_schedule.to_string(),
+                    t.menu_schedule_hint.to_string(),
+                ),
                 Item::Settings => (
                     t.menu_settings.to_string(),
                     t.menu_settings_hint.to_string(),

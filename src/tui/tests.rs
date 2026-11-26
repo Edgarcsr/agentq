@@ -1068,9 +1068,9 @@ fn the_menu_can_be_clicked() {
         })
     };
     // The first click selects the last item, the second one runs it.
-    click(&mut tui, list.y + 3);
+    click(&mut tui, list.y + 4);
     assert!(!tui.should_quit());
-    click(&mut tui, list.y + 3);
+    click(&mut tui, list.y + 4);
     assert!(tui.should_quit());
 }
 
@@ -1114,4 +1114,60 @@ fn the_browser_colors_node_projects_and_adds_icons_with_a_nerd_font() {
     assert!(with_icons.contains('\u{e718}'), "{with_icons}");
     assert!(with_icons.contains('\u{e702}'), "{with_icons}");
     assert!(with_icons.contains('\u{f07b}'), "{with_icons}");
+}
+
+#[test]
+fn the_menu_opens_the_scheduled_scans_and_a_plan_is_saved() {
+    use crate::schedule::Repeat;
+    let mut tui = menu_tui();
+    tui.update(Msg::Key(KeyCode::Char('c')));
+    assert!(matches!(tui.screen, Screen::Planner(_)));
+    draw_tui(&mut tui, 100, 24);
+
+    tui.update(Msg::Key(KeyCode::Char('n')));
+    // Replace the suggested time with one typed by hand.
+    for _ in 0..5 {
+        tui.update(Msg::Key(KeyCode::Backspace));
+    }
+    for c in "08:15".chars() {
+        tui.update(Msg::Key(KeyCode::Char(c)));
+    }
+    tui.update(Msg::Key(KeyCode::Enter));
+
+    assert_eq!(tui.schedules.items.len(), 1);
+    assert_eq!(tui.schedules.items[0].repeat, Repeat::Once);
+    assert!(
+        tui.drain_commands()
+            .iter()
+            .any(|c| matches!(c, Cmd::SaveSchedules(s) if s.items.len() == 1))
+    );
+
+    // The plan is listed, and can be dropped again.
+    let drawn = draw_tui(&mut tui, 100, 24);
+    assert!(drawn.contains("08:15"), "{drawn}");
+    tui.update(Msg::Key(KeyCode::Char('d')));
+    assert!(tui.schedules.items.is_empty());
+    tui.update(Msg::Key(KeyCode::Esc));
+    assert!(matches!(tui.screen, Screen::Menu(_)));
+}
+
+#[test]
+fn a_scan_whose_time_came_is_started_once_and_moved_forward() {
+    use crate::schedule::Repeat;
+    let mut tui = menu_tui();
+    let path = std::env::temp_dir();
+    tui.schedules.add(&path, 100, Repeat::Daily);
+    tui.schedules.add(&path, 200, Repeat::Once);
+    tui.run_due(300);
+    let cmds = tui.drain_commands();
+    let scans = cmds
+        .iter()
+        .filter(|c| matches!(c, Cmd::ScheduledScan { .. }))
+        .count();
+    assert_eq!(scans, 2);
+    // The one-off is gone and the daily one moved past `now`.
+    assert_eq!(tui.schedules.items.len(), 1);
+    assert!(tui.schedules.items[0].at > 300);
+    tui.run_due(300);
+    assert!(tui.drain_commands().is_empty());
 }

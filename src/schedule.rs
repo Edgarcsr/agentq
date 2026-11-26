@@ -5,6 +5,7 @@
 //! dropped. A missing or broken file is the same as nothing scheduled.
 
 use crate::config::Settings;
+use chrono::{Duration, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -116,6 +117,28 @@ impl Schedules {
     }
 }
 
+/// Reads "9:30" or "09:30" as an hour and a minute; anything else is `None`.
+pub fn parse_time(text: &str) -> Option<(u32, u32)> {
+    let (hour, minute) = text.trim().split_once(':')?;
+    let (hour, minute) = (hour.trim().parse().ok()?, minute.trim().parse().ok()?);
+    (hour < 24 && minute < 60).then_some((hour, minute))
+}
+
+/// The next moment the local clock reads `hour:minute`, strictly after `now`
+/// (seconds since the Unix epoch): today if it has not passed yet, otherwise
+/// tomorrow.
+pub fn next_at(hour: u32, minute: u32, now: u64) -> Option<u64> {
+    let local = Local.timestamp_opt(i64::try_from(now).ok()?, 0).single()?;
+    (0..=2).find_map(|days| {
+        let day = local.date_naive() + Duration::days(days);
+        let at = Local
+            .from_local_datetime(&day.and_hms_opt(hour, minute, 0)?)
+            .earliest()?
+            .timestamp();
+        u64::try_from(at).ok().filter(|&at| at > now)
+    })
+}
+
 /// "in 5m", "in 3h", "in 2d"; "due" when it is already time.
 pub fn until(at: u64, now: u64) -> String {
     match at.saturating_sub(now) {
@@ -129,6 +152,7 @@ pub fn until(at: u64, now: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Timelike;
 
     #[test]
     fn several_scans_can_wait_and_stay_sorted() {
@@ -181,6 +205,30 @@ mod tests {
             toml::from_str::<Schedules>("").unwrap(),
             Schedules::default()
         );
+    }
+
+    #[test]
+    fn times_are_read_from_hh_mm() {
+        assert_eq!(parse_time("09:30"), Some((9, 30)));
+        assert_eq!(parse_time(" 9:05 "), Some((9, 5)));
+        assert_eq!(parse_time("24:00"), None);
+        assert_eq!(parse_time("12:60"), None);
+        assert_eq!(parse_time("noon"), None);
+        assert_eq!(parse_time("1230"), None);
+    }
+
+    #[test]
+    fn next_at_is_today_when_ahead_and_tomorrow_when_past() {
+        let now = 1_800_000_000;
+        let local = Local.timestamp_opt(now as i64, 0).unwrap();
+        let ahead = local + Duration::minutes(90);
+        let behind = local - Duration::minutes(90);
+        let at = |t: chrono::DateTime<Local>| next_at(t.hour(), t.minute(), now).unwrap();
+        let secs = |t: chrono::DateTime<Local>| t.timestamp() as u64 - u64::from(t.second());
+        assert_eq!(at(ahead), secs(ahead));
+        assert_eq!(at(behind), secs(behind + Duration::days(1)));
+        assert!(at(ahead) > now && at(ahead) - now <= 86_400);
+        assert!(at(behind) > now && at(behind) - now <= 2 * 86_400);
     }
 
     #[test]

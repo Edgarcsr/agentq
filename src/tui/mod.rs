@@ -19,6 +19,7 @@ mod loading;
 mod logo;
 mod menu;
 mod overview;
+mod planner;
 mod settings;
 mod ui;
 
@@ -31,9 +32,12 @@ use crate::config::Settings;
 use crate::finding::Confidence;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
+use crate::recents::{Recents, Summary};
+use crate::schedule::Schedules;
 use browser::Action;
 use logo::Logo;
 use menu::{Action as MenuAction, Menu};
+use planner::{Action as PlannerAction, Planner};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::crossterm::event::{
@@ -68,6 +72,11 @@ pub enum Msg {
         lang: Lang,
         analysis: Analysis,
     },
+    /// A scheduled scan finished; its numbers are already in the history.
+    ScheduledDone {
+        path: PathBuf,
+        uses: usize,
+    },
 }
 
 /// Work the runtime must do for the interface.
@@ -77,6 +86,11 @@ pub enum Cmd {
     Save { lang: Lang, logo: Logo },
     /// Analyze a folder in the background and report back with [`Msg::Scanned`].
     Scan { id: u64, path: PathBuf, lang: Lang },
+    /// Remember the scheduled scans for the next run (and for the desktop app).
+    SaveSchedules(Schedules),
+    /// Analyze a folder whose scheduled time came, without leaving the screen,
+    /// and record how it went in the history.
+    ScheduledScan { path: PathBuf, lang: Lang },
 }
 
 /// The screen being shown.
@@ -85,6 +99,8 @@ enum Screen {
     Menu(Menu),
     /// The language and the logo.
     Settings(SettingsScreen),
+    /// The scans planned for later.
+    Planner(Planner),
     /// Choosing the project to analyze.
     Browse(Browser),
     /// Waiting for the analysis of a folder.
@@ -103,6 +119,7 @@ pub struct Tui {
     quit: bool,
     spinner: usize,
     next_scan: u64,
+    schedules: Schedules,
     /// The scan whose result is still wanted; older ones are ignored.
     pending: Option<u64>,
     /// Commands left by [`Tui::update`] for the runtime.
@@ -126,6 +143,7 @@ impl Tui {
             quit: false,
             spinner: 0,
             next_scan: 0,
+            schedules: Schedules::default(),
             pending: None,
             outbox: Vec::new(),
         };
@@ -141,6 +159,27 @@ impl Tui {
         if let Screen::Menu(menu) = &mut self.screen {
             menu.logo = logo;
         }
+    }
+
+    /// Loads the scans planned for later; the runtime does this at startup.
+    pub fn set_schedules(&mut self, schedules: Schedules) {
+        self.schedules = schedules;
+    }
+
+    /// Starts the scheduled scans whose time has come.
+    fn run_due(&mut self, now: u64) {
+        let due = self.schedules.due(now);
+        if due.is_empty() {
+            return;
+        }
+        for item in due {
+            self.schedules.completed(item.id, now);
+            self.outbox.push(Cmd::ScheduledScan {
+                path: item.path,
+                lang: self.lang,
+            });
+        }
+        self.outbox.push(Cmd::SaveSchedules(self.schedules.clone()));
     }
 
     /// Asks the runtime to remember the language and the logo.
@@ -162,7 +201,10 @@ impl Tui {
 
     /// Whether the screen moves by itself and needs frequent redraws.
     pub fn is_animated(&self) -> bool {
-        matches!(self.screen, Screen::Menu(_) | Screen::Settings(_)) || self.is_busy()
+        matches!(
+            self.screen,
+            Screen::Menu(_) | Screen::Settings(_) | Screen::Planner(_)
+        ) || self.is_busy()
     }
 
     /// Takes the commands the last updates asked for.
@@ -183,6 +225,10 @@ impl Tui {
                     Screen::Settings(settings) => settings.tick(),
                     _ => {}
                 }
+                // Only the screens that tick on their own look at the clock.
+                if matches!(self.screen, Screen::Menu(_) | Screen::Planner(_)) {
+                    self.run_due(unix_now());
+                }
             }
             Msg::Scanned {
                 id,
@@ -190,6 +236,17 @@ impl Tui {
                 lang,
                 analysis,
             } => self.on_scanned(id, path, lang, analysis),
+            Msg::ScheduledDone { path, uses } => {
+                if let Screen::Planner(planner) = &mut self.screen {
+                    planner.notice = Some(crate::i18n::fill(
+                        self.lang.t().sched_ran,
+                        &[
+                            ("project", &crate::recents::project_name(&path)),
+                            ("uses", &uses),
+                        ],
+                    ));
+                }
+            }
         }
     }
 
@@ -263,6 +320,7 @@ impl Tui {
         match action {
             Some(MenuAction::Browse) => self.screen = Screen::Browse(Browser::new(Tui::here())),
             Some(MenuAction::AnalyzeHere) => self.scan(Tui::here(), false),
+            Some(MenuAction::Schedule) => self.screen = Screen::Planner(Planner::new()),
             Some(MenuAction::Settings) => self.screen = Screen::Settings(SettingsScreen::new()),
             Some(MenuAction::SwitchLanguage) => self.lang = self.lang.other(),
             Some(MenuAction::Quit) => self.quit = true,
@@ -283,6 +341,28 @@ impl Tui {
         }
     }
 
+    /// Applies what the scheduled scans screen asked for and remembers it.
+    fn on_planner(&mut self, action: Option<PlannerAction>) {
+        match action {
+            Some(PlannerAction::Back) => self.open_menu(),
+            Some(PlannerAction::Add { path, at, repeat }) => {
+                self.schedules.add(&path, at, repeat);
+                if let Screen::Planner(planner) = &mut self.screen {
+                    planner.notice = Some(planner::added_message(self.lang, at));
+                }
+                self.outbox.push(Cmd::SaveSchedules(self.schedules.clone()));
+            }
+            Some(PlannerAction::Cancel(id)) => {
+                self.schedules.cancel(id);
+                if let Screen::Planner(planner) = &mut self.screen {
+                    planner.notice = Some(self.lang.t().sched_removed.to_string());
+                }
+                self.outbox.push(Cmd::SaveSchedules(self.schedules.clone()));
+            }
+            None => {}
+        }
+    }
+
     /// Any language switch, from any screen, is remembered.
     fn on_key(&mut self, code: KeyCode) {
         let before = self.lang;
@@ -298,6 +378,16 @@ impl Tui {
 
     fn handle_key(&mut self, code: KeyCode) {
         match &mut self.screen {
+            Screen::Planner(planner) => {
+                let editing = planner.is_editing();
+                let action =
+                    planner.handle_key(code, &self.schedules, &Tui::here().display().to_string());
+                // Typing into the form must not trigger the shortcuts below.
+                if !editing && code == KeyCode::Char('L') {
+                    self.lang = self.lang.other();
+                }
+                self.on_planner(action);
+            }
             Screen::Settings(settings) => {
                 let action = settings.handle_key(code);
                 self.on_settings(action);
@@ -356,7 +446,7 @@ impl Tui {
                 Some(Action::Back) => self.open_menu(),
                 None => {}
             },
-            Screen::Loading(_) => {}
+            Screen::Planner(_) | Screen::Loading(_) => {}
             Screen::Results(app) => app.handle_mouse(kind, column, row),
         }
     }
@@ -368,6 +458,7 @@ impl Tui {
                 menu::render(frame, menu, self.lang, &here)
             }
             Screen::Settings(settings) => settings::render(frame, settings, self.lang, self.logo),
+            Screen::Planner(planner) => planner::render(frame, planner, &self.schedules, self.lang),
             Screen::Browse(browser) => browser::render(frame, browser, self.lang),
             Screen::Loading(path) => loading::render(frame, path, self.spinner, self.lang),
             Screen::Results(app) => {
@@ -380,8 +471,32 @@ impl Tui {
 
 /// Does the work of a command on a background thread; the result comes back
 /// through `tx` as a message.
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 fn perform(cmd: Cmd, tx: &Sender<Msg>) {
     match cmd {
+        Cmd::SaveSchedules(schedules) => {
+            let _ = schedules.save();
+        }
+        Cmd::ScheduledScan { path, lang } => {
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let analysis = analyze_directory(&path, lang);
+                let summary = Summary::from_analysis(&analysis);
+                let mut recents = Recents::load();
+                recents.touch(&path);
+                recents.record(&path, summary);
+                let _ = recents.save();
+                let _ = tx.send(Msg::ScheduledDone {
+                    path,
+                    uses: analysis.assessments.len(),
+                });
+            });
+        }
         Cmd::Save { lang, logo } => {
             let mut settings = Settings::load();
             settings.language = Some(lang.code().to_string());
@@ -420,6 +535,7 @@ pub fn run(
     }
     let mut tui = Tui::start(start, hide_safe, min_confidence, lang);
     tui.set_logo(Logo::resolve(Settings::load().logo.as_deref()));
+    tui.set_schedules(Schedules::load());
     let mut terminal = ratatui::try_init()?;
     // Turn mouse reporting off again even if the program panics.
     let previous_hook = std::panic::take_hook();
