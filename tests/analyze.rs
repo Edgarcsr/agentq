@@ -186,8 +186,10 @@ fn sample_shop_covers_every_urgency_level() {
     assert_eq!(report["summary"]["findings"], 27);
     assert_eq!(report["manifests"].as_array().unwrap().len(), 1);
     let urgency = &report["summary"]["by_urgency"];
-    assert_eq!(urgency["high"], 5);
-    assert_eq!(urgency["medium"], 7);
+    // The RSA that node-forge declares in package.json is medium, not high: a
+    // dependency says what the code could do, not what it does.
+    assert_eq!(urgency["high"], 4);
+    assert_eq!(urgency["medium"], 8);
     assert_eq!(urgency["low"], 6);
     assert_eq!(urgency["none"], 9);
 }

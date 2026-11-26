@@ -69,7 +69,7 @@ fn manifests_are_read_and_dependencies_of_dependencies_are_found() {
 }
 
 #[test]
-fn dependencies_get_the_same_advice_as_calls() {
+fn dependencies_get_the_same_advice_as_calls_but_not_the_same_urgency() {
     let analysis = analyze_directory(&fixture(), Lang::En);
     let rsa = analysis
         .assessments
@@ -77,5 +77,17 @@ fn dependencies_get_the_same_advice_as_calls() {
         .find(|a| a.finding.library == "node-rsa")
         .expect("node-rsa is reported");
     assert!(!rsa.recommendations.is_empty());
-    assert_eq!(rsa.urgency, agentq::assess::Urgency::High);
+    // Only the lockfile lists it, as a dependency of a dependency. A library
+    // that can do RSA does not say the code does it, so the unknown purpose is
+    // not read as the worst case: at most low here, and at most medium when
+    // package.json declares it.
+    assert!(rsa.finding.file.ends_with("package-lock.json"));
+    assert_eq!(rsa.urgency, agentq::assess::Urgency::Low);
+    assert!(
+        analysis
+            .assessments
+            .iter()
+            .filter(|a| a.finding.file.ends_with("package.json"))
+            .all(|a| a.urgency <= agentq::assess::Urgency::Medium)
+    );
 }

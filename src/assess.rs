@@ -1,7 +1,7 @@
 //! Turns findings into assessments: how exposed each use is to quantum
 //! attacks, how urgent a migration is, and what to move to.
 
-use crate::finding::{Finding, Purpose, QuantumRisk};
+use crate::finding::{Confidence, Finding, Purpose, QuantumRisk};
 use crate::i18n::Lang;
 use crate::knowledge::{Attack, KnowledgeBase};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,19 @@ pub struct Assessment {
 /// Returns `None` when the algorithm is not in the knowledge base.
 pub fn assess(finding: &Finding, knowledge: &KnowledgeBase, lang: Lang) -> Option<Assessment> {
     let algorithm = knowledge.get(&finding.algorithm)?;
-    let urgency = urgency(algorithm.risk, finding.purpose);
+    let mut urgency = urgency(algorithm.risk, finding.purpose);
+    // A package in a manifest can do this; it does not say the code does. The
+    // unknown purpose is not read as the worst case there: what is declared
+    // is at most medium, and what only a lockfile lists, as a dependency of a
+    // dependency, is at most low.
+    if crate::modules::javascript::manifest::is_manifest(&finding.file) {
+        let cap = if finding.confidence == Confidence::Low {
+            Urgency::Low
+        } else {
+            Urgency::Medium
+        };
+        urgency = urgency.min(cap);
+    }
 
     let mut explanation = algorithm.rationale(lang).to_string();
     if let Some(context) = purpose_context(algorithm.risk, finding.purpose, lang) {
