@@ -7,9 +7,11 @@
 //! can list the dates of a project and open any of them. A missing or broken
 //! file is the same as no snapshot.
 
+use crate::analysis::Analysis;
 use crate::assess::Assessment;
 use crate::config::Settings;
 use crate::detect::Language;
+use crate::i18n::Lang;
 use crate::recents::Summary;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -58,6 +60,33 @@ fn file_in(dir: &Path, project: &Path, taken_at: u64) -> PathBuf {
 }
 
 impl Snapshot {
+    /// What a finished analysis of `path` looks like in the history: the
+    /// findings most urgent first and the languages most files first.
+    pub fn from_analysis(path: &Path, analysis: &Analysis, lang: Lang, taken_at: u64) -> Snapshot {
+        let mut languages: Vec<(Language, usize)> = Vec::new();
+        for (_, language) in &analysis.files {
+            match languages.iter_mut().find(|(l, _)| l == language) {
+                Some((_, n)) => *n += 1,
+                None => languages.push((*language, 1)),
+            }
+        }
+        languages.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let mut findings = analysis.assessments.clone();
+        findings.sort_by(|a, b| {
+            b.urgency.cmp(&a.urgency).then_with(|| {
+                (&a.finding.file, a.finding.line).cmp(&(&b.finding.file, b.finding.line))
+            })
+        });
+        Snapshot {
+            path: path.to_path_buf(),
+            taken_at,
+            lang: lang.code().to_string(),
+            summary: Summary::from_analysis(analysis),
+            languages,
+            findings,
+        }
+    }
+
     pub fn dir() -> Option<PathBuf> {
         Settings::dir().map(|dir| dir.join("history"))
     }

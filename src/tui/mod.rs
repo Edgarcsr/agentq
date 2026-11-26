@@ -32,8 +32,9 @@ use crate::config::Settings;
 use crate::finding::Confidence;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
-use crate::recents::{Recents, Summary};
+use crate::recents::Recents;
 use crate::schedule::Schedules;
+use crate::snapshot::Snapshot;
 use browser::Action;
 use logo::Logo;
 use menu::{Action as MenuAction, Menu};
@@ -486,7 +487,11 @@ fn perform(cmd: Cmd, tx: &Sender<Msg>) {
             let tx = tx.clone();
             thread::spawn(move || {
                 let analysis = analyze_directory(&path, lang);
-                let summary = Summary::from_analysis(&analysis);
+                // The desktop app reads the same history: keep the analysis
+                // there too, or it would open on an older one.
+                let snapshot = Snapshot::from_analysis(&path, &analysis, lang, unix_now());
+                let summary = snapshot.summary;
+                let _ = snapshot.save();
                 let mut recents = Recents::load();
                 recents.touch(&path);
                 recents.record(&path, summary);

@@ -614,6 +614,9 @@ impl Workspace {
             let found = Snapshot::versions(&recent.path);
             workspace.versions.insert(recent.path.clone(), found);
         }
+        // Lists saved by older versions follow the order of opening.
+        workspace.sort_history();
+        let _ = workspace.recents.save();
         if let Some(path) = initial {
             workspace.open_project(path, cx);
         }
@@ -648,6 +651,15 @@ impl Workspace {
         self.page = Page::Dashboard;
         if let Some(index) = self.open.iter().position(|p| p.path == path) {
             self.active = Some(index);
+            // It may be showing an older date: the project opens on the latest.
+            let latest = self.dates_of(&path).first().copied();
+            let project = &self.open[index];
+            if let Some(latest) = latest
+                && project.status() == Status::Done
+                && project.analyzed_at != Some(latest)
+            {
+                self.view_snapshot(path, latest, cx);
+            }
             cx.notify();
             return;
         }
@@ -761,39 +773,18 @@ impl Workspace {
     }
 
     fn finish_scan(&mut self, path: &Path, analysis: Analysis, cx: &mut Context<Self>) {
-        let summary = Summary::from_analysis(&analysis);
-        let mut languages: Vec<(Language, usize)> = Vec::new();
-        for (_, language) in &analysis.files {
-            match languages.iter_mut().find(|(l, _)| l == language) {
-                Some((_, n)) => *n += 1,
-                None => languages.push((*language, 1)),
-            }
-        }
-        languages.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-        let mut findings = analysis.assessments;
-        findings.sort_by(|a, b| {
-            b.urgency.cmp(&a.urgency).then_with(|| {
-                (&a.finding.file, a.finding.line).cmp(&(&b.finding.file, b.finding.line))
-            })
-        });
         let taken_at = now_secs();
+        let snapshot = Snapshot::from_analysis(path, &analysis, self.lang, taken_at);
+        let summary = snapshot.summary;
         // Keep this analysis: it is what the history shows next time.
-        let _ = Snapshot {
-            path: path.to_path_buf(),
-            taken_at,
-            lang: self.lang.code().to_string(),
-            summary,
-            languages: languages.clone(),
-            findings: findings.clone(),
-        }
-        .save();
+        let _ = snapshot.save();
         self.versions
             .insert(path.to_path_buf(), Snapshot::versions(path));
         if let Some(project) = self.open.iter_mut().find(|p| p.path == path) {
             project.scan = Scan::Done {
                 summary,
-                findings,
-                languages,
+                findings: snapshot.findings,
+                languages: snapshot.languages,
             };
             project.selected = 0;
             project.analyzed_at = Some(taken_at);
@@ -956,6 +947,12 @@ impl Workspace {
             self.expanded.remove(path);
         }
         self.versions.insert(path.to_path_buf(), left.clone());
+        self.sort_history();
+        // The numbers in the list are those of the latest analysis left.
+        if let Some(snap) = left.first().and_then(|at| Snapshot::load_at(path, *at)) {
+            self.recents.record(path, snap.summary);
+            let _ = self.recents.save();
+        }
         if viewing && let Some(latest) = left.first() {
             self.view_snapshot(path.to_path_buf(), *latest, cx);
         }
@@ -1036,14 +1033,16 @@ impl Workspace {
             .open
             .iter()
             .any(|p| p.path == recent.path && p.status() == Status::Running);
-        let summary = self
-            .open
-            .iter()
-            .find_map(|p| match (&p.path == &recent.path, &p.scan) {
-                (true, Scan::Done { summary, .. }) => Some(*summary),
-                _ => None,
-            })
-            .or(recent.summary);
+        // The numbers of the latest analysis. An open project may be showing
+        // an older date, so what it holds is only the fallback.
+        let summary = recent.summary.or_else(|| {
+            self.open
+                .iter()
+                .find_map(|p| match (&p.path == &recent.path, &p.scan) {
+                    (true, Scan::Done { summary, .. }) => Some(*summary),
+                    _ => None,
+                })
+        });
         let status = if running {
             Status::Running
         } else if self.schedules.next_for(&recent.path).is_some() || summary.is_none() {
@@ -1059,6 +1058,23 @@ impl Workspace {
     }
 
     // ---- sidebar -----------------------------------------------------------
+
+    /// The date of the latest analysis of a project; for one that was never
+    /// analyzed, when it was added.
+    fn analysis_date(&self, recent: &Recent) -> u64 {
+        self.dates_of(&recent.path)
+            .first()
+            .copied()
+            .unwrap_or(recent.last_opened)
+    }
+
+    /// Puts the history in the order of the dates of the analyses, newest
+    /// first. Projects with the same date keep their places.
+    fn sort_history(&mut self) {
+        let mut projects = std::mem::take(&mut self.recents.projects);
+        projects.sort_by_key(|r| std::cmp::Reverse(self.analysis_date(r)));
+        self.recents.projects = projects;
+    }
 
     /// The saved analyses of a project, newest first.
     fn dates_of(&self, path: &Path) -> &[u64] {
@@ -1611,11 +1627,7 @@ impl Workspace {
                 let next = self.schedules.next_for(&r.path);
                 // The date of the latest analysis, which is what the column
                 // and the order of the list follow.
-                let analyzed = self
-                    .versions
-                    .get(&r.path)
-                    .and_then(|v| v.first().copied())
-                    .unwrap_or(r.last_opened);
+                let analyzed = self.analysis_date(r);
                 // The text of the column and the exact moment it stands for.
                 let (when, exact) = match (status, next) {
                     (Status::Running, _) => (pal.ui.now.to_string(), None),
