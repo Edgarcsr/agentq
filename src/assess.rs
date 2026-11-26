@@ -4,10 +4,10 @@
 use crate::finding::{Finding, Purpose, QuantumRisk};
 use crate::i18n::Lang;
 use crate::knowledge::{Attack, KnowledgeBase};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// How soon a finding should be addressed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Urgency {
     /// Already safe, or a post-quantum algorithm.
@@ -18,14 +18,14 @@ pub enum Urgency {
 }
 
 /// A post-quantum (or stronger) algorithm that can replace the one found.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Recommendation {
     pub id: String,
     pub name: String,
     pub implementations: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Assessment {
     pub finding: Finding,
     pub algorithm_name: String,
@@ -89,6 +89,20 @@ pub fn assess_all(findings: &[Finding], knowledge: &KnowledgeBase, lang: Lang) -
     findings
         .iter()
         .filter_map(|finding| assess(finding, knowledge, lang))
+        .collect()
+}
+
+/// Writes the explanations and the advice of finished assessments again in
+/// `lang`, without looking at the code. Everything else stays as it was, so a
+/// saved analysis can change language instantly instead of being scanned again.
+pub fn relocalize(
+    assessments: Vec<Assessment>,
+    knowledge: &KnowledgeBase,
+    lang: Lang,
+) -> Vec<Assessment> {
+    assessments
+        .into_iter()
+        .map(|old| assess(&old.finding, knowledge, lang).unwrap_or(old))
         .collect()
 }
 
@@ -196,6 +210,24 @@ mod tests {
             Lang::En,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_saved_analysis_changes_language_without_a_scan() {
+        let kb = KnowledgeBase::embedded();
+        let in_english = vec![
+            assess_one("rsa", Purpose::KeyExchange),
+            assess_one("md5", Purpose::Hash),
+        ];
+        let in_portuguese = relocalize(in_english.clone(), kb, Lang::PtBr);
+        let expected: Vec<_> = in_english
+            .iter()
+            .map(|a| assess(&a.finding, kb, Lang::PtBr).unwrap())
+            .collect();
+        assert_eq!(in_portuguese, expected);
+        assert_ne!(in_portuguese[0].explanation, in_english[0].explanation);
+        // And back again.
+        assert_eq!(relocalize(in_portuguese, kb, Lang::En), in_english);
     }
 
     fn ids(assessment: &Assessment) -> Vec<&str> {

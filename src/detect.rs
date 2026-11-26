@@ -1,4 +1,5 @@
 use ignore::WalkBuilder;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Directories that hold dependencies or build output and are never scanned.
@@ -15,7 +16,7 @@ const SKIPPED_DIRS: &[&str] = &[
     "bower_components",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Language {
     Python,
     Java,

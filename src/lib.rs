@@ -13,4 +13,5 @@ pub mod purpose;
 pub mod recents;
 pub mod report;
 pub mod schedule;
+pub mod snapshot;
 pub mod tui;
