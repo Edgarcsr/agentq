@@ -651,7 +651,9 @@ impl Workspace {
             cx.notify();
             return;
         }
-        self.recents.touch(&path);
+        // Opening a project does not move it in the history: the list follows
+        // the dates of the analyses.
+        self.recents.add(&path);
         let _ = self.recents.save();
         // What was found the last time is shown at once; scanning again is
         // up to the user.
@@ -717,7 +719,7 @@ impl Workspace {
                 Ui::of(self.lang).toast_started,
                 project_name(&item.path),
             );
-            self.recents.touch(&item.path);
+            self.recents.add(&item.path);
             match self.open.iter().find(|p| p.path == item.path) {
                 // Already being scanned: that run covers this one.
                 Some(p) if p.status() == Status::Running => {}
@@ -796,6 +798,8 @@ impl Workspace {
             project.selected = 0;
             project.analyzed_at = Some(taken_at);
         }
+        // A new analysis is what puts a project at the top of the history.
+        self.recents.touch(path);
         self.recents.record(path, summary);
         let _ = self.recents.save();
         let ui = Ui::of(self.lang);
@@ -931,7 +935,7 @@ impl Workspace {
                 ),
             );
             // Scheduled projects show up in the table even if never opened.
-            self.recents.touch(&path);
+            self.recents.add(&path);
             let _ = self.schedules.save();
             let _ = self.recents.save();
         }
@@ -1605,13 +1609,20 @@ impl Workspace {
                 let (status, summary) = self.state_of(r);
                 let path = r.path.clone();
                 let next = self.schedules.next_for(&r.path);
+                // The date of the latest analysis, which is what the column
+                // and the order of the list follow.
+                let analyzed = self
+                    .versions
+                    .get(&r.path)
+                    .and_then(|v| v.first().copied())
+                    .unwrap_or(r.last_opened);
                 // The text of the column and the exact moment it stands for.
                 let (when, exact) = match (status, next) {
                     (Status::Running, _) => (pal.ui.now.to_string(), None),
                     (_, Some(n)) => (pal.ui.until(n.at, now), Some(pal.ui.exact(n.at))),
                     _ => (
-                        pal.ui.ago(now.saturating_sub(r.last_opened)),
-                        Some(pal.ui.exact(r.last_opened)),
+                        pal.ui.ago(now.saturating_sub(analyzed)),
+                        Some(pal.ui.exact(analyzed)),
                     ),
                 };
                 h_flex()
@@ -2299,7 +2310,7 @@ impl Workspace {
                                         if let Some(d) = this.draft.as_mut() {
                                             d.path = Some(path.clone());
                                         }
-                                        this.recents.touch(&path);
+                                        this.recents.add(&path);
                                         let _ = this.recents.save();
                                         cx.notify();
                                     },

@@ -84,7 +84,7 @@ impl Summary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Recent {
     pub path: PathBuf,
-    /// Seconds since the Unix epoch.
+    /// Seconds since the Unix epoch: when it was added or last analyzed.
     pub last_opened: u64,
     pub summary: Option<Summary>,
 }
@@ -197,6 +197,15 @@ impl Recents {
         std::fs::write(path, text)
     }
 
+    /// Makes sure `path` is in the history. A project that is already there
+    /// keeps its place: opening one must not reorder the list, which follows
+    /// the dates of the analyses.
+    pub fn add(&mut self, path: &Path) {
+        if !self.projects.iter().any(|r| r.path == path) {
+            self.touch(path);
+        }
+    }
+
     /// Moves `path` to the top, keeping what is known about its last scan.
     pub fn touch(&mut self, path: &Path) {
         let summary = self
@@ -262,6 +271,19 @@ mod tests {
         assert_eq!(paths, [PathBuf::from("/a"), PathBuf::from("/b")]);
         assert_eq!(recents.projects[0].health(), Health::AtRisk);
         assert_eq!(recents.projects[1].health(), Health::Unknown);
+    }
+
+    #[test]
+    fn adding_a_known_project_keeps_its_place() {
+        let mut recents = Recents::default();
+        recents.touch(Path::new("/a"));
+        recents.touch(Path::new("/b"));
+        recents.add(Path::new("/a"));
+        let paths: Vec<_> = recents.projects.iter().map(|r| r.path.clone()).collect();
+        assert_eq!(paths, [PathBuf::from("/b"), PathBuf::from("/a")]);
+        // A new one goes to the top.
+        recents.add(Path::new("/c"));
+        assert_eq!(recents.projects[0].path, PathBuf::from("/c"));
     }
 
     #[test]
