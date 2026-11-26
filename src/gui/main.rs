@@ -57,6 +57,14 @@ fn main() {
                 cx.new(|cx| Workspace::new(initial, cx))
             })
             .expect("failed to open the window");
+            // Closing the last window ends the program, so the terminal that
+            // started it comes back instead of staying stuck on a window-less app.
+            cx.on_window_closed(|cx, _| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            })
+            .detach();
             cx.activate(true);
         });
 }
