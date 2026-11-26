@@ -4,6 +4,7 @@ use crate::detect::{Language, scan_manifests_with, scan_source_files_with};
 use crate::finding::Finding;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
+use crate::modules::java::JavaAnalyzer;
 use crate::modules::javascript::{JavaScriptAnalyzer, manifest};
 use crate::modules::python::PythonAnalyzer;
 use std::fs;
@@ -14,7 +15,8 @@ fn analyzer_for(language: Language) -> Option<&'static dyn Analyzer> {
     match language {
         Language::JavaScriptTypeScript => Some(&JavaScriptAnalyzer),
         Language::Python => Some(&PythonAnalyzer),
-        Language::Java | Language::Go => None,
+        Language::Java => Some(&JavaAnalyzer),
+        Language::Go => None,
     }
 }
 
@@ -102,10 +104,10 @@ mod language_tests {
     use super::*;
 
     #[test]
-    fn javascript_typescript_and_python_are_analyzed_for_now() {
+    fn javascript_typescript_python_and_java_are_analyzed_for_now() {
         assert!(is_analyzed(Language::JavaScriptTypeScript));
         assert!(is_analyzed(Language::Python));
-        assert!(!is_analyzed(Language::Java));
+        assert!(is_analyzed(Language::Java));
         assert!(!is_analyzed(Language::Go));
     }
 }
