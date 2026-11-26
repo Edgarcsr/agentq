@@ -1,0 +1,144 @@
+--- a/src/gui/workspace.rs
++++ b/src/gui/workspace.rs
+@@ -1614,73 +1614,77 @@
+                         Some(pal.ui.exact(r.last_opened)),
+                     ),
+                 };
+-                h_flex()
+-                    .id(("row", i))
+-                    .h(px(44.))
+-                    .px_4()
+-                    .gap_4()
+-                    .items_center()
+-                    .border_b_1()
+-                    .border_color(pal.border)
+-                    .cursor_pointer()
+-                    .hover(|s| s.bg(pal.hover))
+-                    .tooltip(tip(r.path.display().to_string()))
+-                    .child(
+-                        div()
+-                            .flex_shrink_0()
+-                            .child(kind_icon(self.kind_of(&r.path))),
+-                    )
+-                    .child(
+-                        div()
+-                            .flex_1()
+-                            .min_w_0()
+-                            .truncate()
+-                            .font_medium()
+-                            .child(r.name()),
+-                    )
+-                    .when(medium, |s| {
+-                        s.child(
+-                            div()
+-                                .w(px(110.))
+-                                .flex_shrink_0()
+-                                .child(status_badge(status, pal)),
+-                        )
+-                    })
+-                    .when(wide, |s| {
+-                        s.child(
++                // The separator belongs to the outer box and stays straight;
++                // only the row inside, which lights up on hover, has rounded
++                // corners.
++                div().py_1().border_b_1().border_color(pal.border).child(
++                    h_flex()
++                        .id(("row", i))
++                        .h(px(26.))
++                        .px_4()
++                        .gap_4()
++                        .items_center()
++                        .rounded_lg()
++                        .cursor_pointer()
++                        .hover(|s| s.bg(pal.hover))
++                        .tooltip(tip(r.path.display().to_string()))
++                        .child(
+                             div()
+-                                .w(px(170.))
+                                 .flex_shrink_0()
+-                                .child(issues(summary, pal)),
++                                .child(kind_icon(self.kind_of(&r.path))),
+                         )
+-                    })
+-                    .child(
+-                        div()
+-                            .id(("when", i))
+-                            .w(px(90.))
+-                            .flex_shrink_0()
+-                            .whitespace_nowrap()
+-                            .text_right()
+-                            .text_sm()
+-                            .text_color(pal.muted)
+-                            .when_some(exact, |s, text| s.tooltip(tip(text)))
+-                            .child(when),
+-                    )
+-                    .child({
+-                        let path = r.path.clone();
+-                        Button::new(("forget", i))
+-                            .ghost()
+-                            .xsmall()
+-                            .icon(IconName::Close)
+-                            .tooltip(pal.ui.remove_project)
+-                            .on_click(cx.listener(move |this, _, _, cx| {
+-                                cx.stop_propagation();
+-                                this.forget_project(&path, cx);
+-                            }))
+-                    })
+-                    .on_click(
+-                        cx.listener(move |this, _, _, cx| this.open_project(path.clone(), cx)),
+-                    )
++                        .child(
++                            div()
++                                .flex_1()
++                                .min_w_0()
++                                .truncate()
++                                .font_medium()
++                                .child(r.name()),
++                        )
++                        .when(medium, |s| {
++                            s.child(
++                                div()
++                                    .w(px(110.))
++                                    .flex_shrink_0()
++                                    .child(status_badge(status, pal)),
++                            )
++                        })
++                        .when(wide, |s| {
++                            s.child(
++                                div()
++                                    .w(px(170.))
++                                    .flex_shrink_0()
++                                    .child(issues(summary, pal)),
++                            )
++                        })
++                        .child(
++                            div()
++                                .id(("when", i))
++                                .w(px(90.))
++                                .flex_shrink_0()
++                                .whitespace_nowrap()
++                                .text_right()
++                                .text_sm()
++                                .text_color(pal.muted)
++                                .when_some(exact, |s, text| s.tooltip(tip(text)))
++                                .child(when),
++                        )
++                        .child({
++                            let path = r.path.clone();
++                            Button::new(("forget", i))
++                                .ghost()
++                                .xsmall()
++                                .icon(IconName::Close)
++                                .tooltip(pal.ui.remove_project)
++                                .on_click(cx.listener(move |this, _, _, cx| {
++                                    cx.stop_propagation();
++                                    this.forget_project(&path, cx);
++                                }))
++                        })
++                        .on_click(
++                            cx.listener(move |this, _, _, cx| this.open_project(path.clone(), cx)),
++                        ),
++                )
+             })
+             .collect::<Vec<_>>();
+ 
