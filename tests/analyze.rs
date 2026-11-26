@@ -312,3 +312,94 @@ fn an_unknown_language_is_rejected() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("unknown language"));
 }
+
+#[test]
+fn java_flows_through_scanning_assessment_and_json_reporting() {
+    let report = json_report("java_crypto", &["--lang", "en"]);
+    assert_eq!(report["summary"]["files"], 2);
+    assert_eq!(report["summary"]["findings"], 9);
+    assert_eq!(report["summary"]["languages"]["Java"]["files"], 2);
+    let findings = report["findings"].as_array().unwrap();
+    let ecdh = findings
+        .iter()
+        .find(|a| a["finding"]["algorithm"] == "ecdh")
+        .unwrap();
+    assert_eq!(ecdh["risk"], "broken");
+    assert_eq!(ecdh["urgency"], "high");
+    assert_eq!(ecdh["recommendations"][0]["id"], "ml-kem");
+    let rsa = findings
+        .iter()
+        .find(|a| a["finding"]["key_size"] == 2048)
+        .unwrap();
+    assert_eq!(rsa["finding"]["purpose"], "signature");
+    assert_eq!(rsa["finding"]["confidence"], "medium");
+    assert_eq!(rsa["finding"]["line"], 10);
+    assert_eq!(rsa["finding"]["column"], 19);
+    assert_eq!(rsa["recommendations"][0]["id"], "ml-dsa");
+    assert_eq!(
+        json_report("java_crypto", &["--hide-safe"])["summary"]["findings"],
+        6
+    );
+    assert_eq!(
+        json_report("java_crypto", &["--min-confidence", "high"])["summary"]["findings"],
+        8
+    );
+}
+
+#[test]
+fn java_reports_translate_prose_and_preserve_machine_readable_findings() {
+    let english = json_report("java_crypto", &["--lang", "en"]);
+    let portuguese = json_report("java_crypto", &["--lang", "pt-BR"]);
+    assert_eq!(portuguese["language"], "pt-BR");
+    assert_eq!(english["summary"], portuguese["summary"]);
+    for (en, pt) in english["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(portuguese["findings"].as_array().unwrap())
+    {
+        assert_eq!(en["finding"], pt["finding"]);
+        assert_eq!(en["risk"], pt["risk"]);
+        assert_eq!(en["urgency"], pt["urgency"]);
+        assert_eq!(en["recommendations"], pt["recommendations"]);
+    }
+    let ecdh = portuguese["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["finding"]["algorithm"] == "ecdh")
+        .unwrap();
+    assert!(
+        ecdh["explanation"]
+            .as_str()
+            .unwrap()
+            .contains("colher agora")
+    );
+    assert!(ecdh["advice"][0].as_str().unwrap().contains("híbrido"));
+}
+
+#[test]
+fn java_findings_appear_in_text_and_markdown_in_both_languages() {
+    for (lang, rsa_label, aes_label, title) in [
+        (
+            "en",
+            "RSA (signature) 2048-bit",
+            "AES-128 (encryption) 128-bit",
+            "# agentq report",
+        ),
+        (
+            "pt-BR",
+            "RSA (assinatura) 2048-bit",
+            "AES-128 (cifragem) 128-bit",
+            "# Relatório do agentq",
+        ),
+    ] {
+        let text = stdout_of(run(&["--lang", lang], "java_crypto"));
+        assert!(text.contains(rsa_label), "{text}");
+        assert!(text.contains(aes_label), "{text}");
+        let markdown = stdout_of(run(&["-f", "md", "--lang", lang], "java_crypto"));
+        assert!(markdown.starts_with(title), "{markdown}");
+        assert!(markdown.contains("ClassicCrypto.java:10:19"));
+        assert!(markdown.contains("ML-KEM"));
+    }
+}

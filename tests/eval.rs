@@ -71,3 +71,31 @@ fn python_corpus_compares_semantic_and_lexical_detection() {
             .contains(&("lookalike.py".into(), 1, "rsa".into()))
     );
 }
+
+#[test]
+fn java_corpus_quality_and_documented_limitations_do_not_regress() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("eval/corpus/java");
+    let evaluation = evaluate(&root);
+    assert_eq!(evaluation.files, 8);
+    assert_eq!(evaluation.expected, 49);
+    assert_eq!(evaluation.tool.overall.true_positives, 47);
+    assert!(evaluation.tool.spurious.is_empty());
+    let missed: Vec<_> = evaluation
+        .tool
+        .missed
+        .iter()
+        .map(|(file, line, algorithm)| (file.as_str(), *line, algorithm.as_str()))
+        .collect();
+    assert_eq!(
+        missed,
+        [
+            ("Limitations.java", 8, "md5"),
+            ("Limitations.java", 10, "rsa")
+        ]
+    );
+    assert_eq!(evaluation.purpose_total, 47);
+    assert_eq!(evaluation.purpose_correct, 47);
+    assert!(
+        evaluation.tool.overall.f1().unwrap() > evaluation.baseline.overall.f1().unwrap() + 0.2
+    );
+}

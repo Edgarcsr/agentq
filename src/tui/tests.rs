@@ -8,7 +8,7 @@ use super::{Cmd, Msg, Screen, Tui, perform};
 use crate::analysis::Analysis;
 use crate::analysis::analyze_directory;
 use crate::assess::Urgency;
-use crate::finding::{Confidence, QuantumRisk};
+use crate::finding::{Confidence, Purpose, QuantumRisk};
 use crate::i18n::Lang;
 use crate::report::fixtures;
 use ratatui::Terminal;
@@ -761,7 +761,8 @@ fn a_path_shows_a_loading_screen_until_the_scan_arrives() {
     assert!(tui.is_busy());
     let loading = draw_tui(&mut tui, 100, 20);
     assert!(loading.contains("Analyzing"), "{loading}");
-    assert!(loading.contains("node-shop"), "{loading}");
+    // The fixed-width panel can clip the end of an absolute path. Check the
+    // complete requested path on the scan command below instead.
     assert!(loading.contains("Esc cancels"), "{loading}");
     assert!(loading.contains("⠋"), "{loading}");
 
@@ -906,6 +907,48 @@ fn a_scan_runs_on_a_background_thread_and_reports_back() {
     };
     assert_eq!(id, 7);
     assert_eq!(analysis.assessments.len(), 27);
+}
+
+fn java_sample() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/java_crypto")
+}
+
+#[test]
+fn java_scan_shows_findings_filters_and_portuguese() {
+    let mut tui = Tui::start(Some(&java_sample()), false, Confidence::Low, Lang::En);
+    settle(&mut tui);
+    let Screen::Results(app) = &tui.screen else {
+        panic!("expected the results")
+    };
+    assert_eq!(app.file_count, 2);
+    assert!(
+        app.visible()
+            .iter()
+            .any(|a| a.finding.algorithm == "rsa" && a.finding.purpose == Purpose::Signature)
+    );
+
+    press(&mut tui, KeyCode::Char('2'));
+    let english = draw_tui(&mut tui, 120, 32);
+    assert!(english.contains("ClassicCrypto.java"), "{english}");
+    assert!(english.contains("RSA"), "{english}");
+
+    press(&mut tui, KeyCode::Char('L'));
+    let portuguese = draw_tui(&mut tui, 120, 32);
+    assert!(
+        portuguese.contains("assinatura") || portuguese.contains("Assinatura"),
+        "{portuguese}"
+    );
+
+    let before = match &tui.screen {
+        Screen::Results(app) => app.visible().len(),
+        _ => panic!("expected the results"),
+    };
+    press(&mut tui, KeyCode::Char('s'));
+    let after = match &tui.screen {
+        Screen::Results(app) => app.visible().len(),
+        _ => panic!("expected the results"),
+    };
+    assert!(after < before);
 }
 
 #[test]
