@@ -76,7 +76,8 @@ pub struct Ui {
     pub project: &'static str,
     pub choose_other: &'static str,
     pub at_time: &'static str,
-    pub at_time_hint: &'static str,
+    pub schedule_subtitle: &'static str,
+    pub change_project: &'static str,
     pub remove_project: &'static str,
     pub remove_analysis: &'static str,
     pub toast_analysis_removed: &'static str,
@@ -166,7 +167,8 @@ static EN: Ui = Ui {
     project: "Project",
     choose_other: "Choose another folder…",
     at_time: "Time",
-    at_time_hint: "Runs the next time the clock reads this. Type the digits, or use the arrows.",
+    schedule_subtitle: "Choose a project and the time of day it should run.",
+    change_project: "Change",
     remove_project: "Remove from history",
     remove_analysis: "Remove this analysis",
     toast_analysis_removed: "Analysis removed",
@@ -256,7 +258,8 @@ static PT: Ui = Ui {
     project: "Projeto",
     choose_other: "Escolher outra pasta…",
     at_time: "Horário",
-    at_time_hint: "Roda na próxima vez que o relógio marcar esse horário. Digite os números ou use as setas.",
+    schedule_subtitle: "Escolha um projeto e o horário em que ele deve rodar.",
+    change_project: "Trocar",
     remove_project: "Remover do histórico",
     remove_analysis: "Remover esta análise",
     toast_analysis_removed: "Análise removida",
@@ -363,6 +366,37 @@ impl Ui {
             )
         } else {
             moment.format("%b %-d, %-I:%M %p").to_string()
+        }
+    }
+
+    /// When the first run will be, in plain words: "Runs today at 15:00 · in
+    /// 2h", "Runs every day at 09:30, starting tomorrow".
+    pub fn plan_summary(&self, at: u64, now: u64, repeat: Repeat) -> String {
+        use chrono::{Local, TimeZone};
+        let local = |t: u64| {
+            i64::try_from(t)
+                .ok()
+                .and_then(|t| Local.timestamp_opt(t, 0).single())
+        };
+        let (Some(first), Some(today)) = (local(at), local(now)) else {
+            return String::new();
+        };
+        let time = first.format("%H:%M");
+        let same_day = first.date_naive() == today.date_naive();
+        if self.pt() {
+            let day = if same_day { "hoje" } else { "amanhã" };
+            match repeat {
+                Repeat::Once => format!("Roda {day} às {time} · {}", self.until(at, now)),
+                Repeat::Daily => format!("Roda todo dia às {time}, a partir de {day}"),
+                Repeat::Weekly => format!("Roda toda semana às {time}, a partir de {day}"),
+            }
+        } else {
+            let day = if same_day { "today" } else { "tomorrow" };
+            match repeat {
+                Repeat::Once => format!("Runs {day} at {time} · {}", self.until(at, now)),
+                Repeat::Daily => format!("Runs every day at {time}, starting {day}"),
+                Repeat::Weekly => format!("Runs every week at {time}, starting {day}"),
+            }
         }
     }
 

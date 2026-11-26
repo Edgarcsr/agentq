@@ -90,6 +90,11 @@ struct Draft {
     /// The time of day the user types in.
     time: gpui_kit::Entity<TimeFieldState>,
     repeat: Repeat,
+    /// The list of projects is open, to pick another one.
+    changing: bool,
+    /// Redraws the dialog while the time is being typed, so the summary of
+    /// when it will run stays right.
+    _watch: gpui_kit::Subscription,
 }
 
 pub struct Workspace {
@@ -894,10 +899,13 @@ impl Workspace {
             state.set_time(start, window, cx);
             state
         });
+        let watch = cx.observe(&time, |_, _, cx| cx.notify());
         self.draft = Some(Draft {
+            changing: path.is_none(),
             path,
             time,
             repeat: Repeat::Once,
+            _watch: watch,
         });
         cx.notify();
     }
@@ -907,6 +915,7 @@ impl Workspace {
             path: Some(path),
             time,
             repeat,
+            ..
         }) = self.draft.take()
         {
             let time = time.read(cx).time();
@@ -2209,105 +2218,94 @@ impl Workspace {
     fn schedule_dialog(&self, pal: Pal, cx: &mut Context<Self>) -> Option<AnyElement> {
         let draft = self.draft.as_ref()?;
         let chosen = draft.path.clone();
+        let picking = draft.changing || chosen.is_none();
 
-        let projects = self
-            .recents
-            .projects
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let on = chosen.as_ref() == Some(&r.path);
-                let path = r.path.clone();
-                h_flex()
-                    .id(("pick", i))
-                    .h(px(34.))
-                    .gap_3()
-                    .px_3()
-                    .rounded_md()
-                    .items_center()
-                    .cursor_pointer()
-                    .text_sm()
-                    .when(on, |s| s.bg(pal.active))
-                    .hover(|s| s.bg(pal.hover))
-                    .child(
-                        div()
-                            .size(px(14.))
-                            .flex_shrink_0()
-                            .rounded_full()
-                            .border_1()
-                            .border_color(if on { pal.fg } else { pal.muted })
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .when(on, |s| {
-                                s.child(div().size(px(6.)).rounded_full().bg(pal.fg))
-                            }),
-                    )
-                    .child(div().flex_1().min_w_0().truncate().child(r.name()))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if let Some(d) = this.draft.as_mut() {
-                            d.path = Some(path.clone());
-                        }
-                        cx.notify();
-                    }))
-            })
-            .collect::<Vec<_>>();
-
-        let repeats = [Repeat::Once, Repeat::Daily, Repeat::Weekly]
-            .into_iter()
-            .enumerate()
-            .map(|(i, r)| {
-                chip(
-                    ("repeat", i),
-                    pal.ui.repeat_label(r),
-                    draft.repeat == r,
-                    pal,
+        // The project: the one chosen, as a card, or the list to choose from.
+        let project: AnyElement = match (&chosen, picking) {
+            (Some(path), false) => h_flex()
+                .gap_3()
+                .px_3()
+                .h(px(52.))
+                .items_center()
+                .rounded_lg()
+                .border_1()
+                .border_color(pal.border)
+                .child(kind_icon(self.kind_of(path)))
+                .child(
+                    v_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .truncate()
+                                .text_sm()
+                                .font_medium()
+                                .child(project_name(path)),
+                        )
+                        .child(
+                            div()
+                                .truncate()
+                                .text_xs()
+                                .text_color(pal.muted)
+                                .child(path.display().to_string()),
+                        ),
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if let Some(d) = this.draft.as_mut() {
-                        d.repeat = r;
-                    }
-                    cx.notify();
-                }))
-            })
-            .collect::<Vec<_>>();
-
-        let field = |label: &'static str, body: AnyElement| {
-            v_flex()
-                .gap_2()
-                .child(div().text_sm().text_color(pal.muted).child(label))
-                .child(body)
-        };
-
-        let card = v_flex()
-            .id("schedule-card")
-            .w(px(440.))
-            .max_w_full()
-            .max_h_full()
-            .overflow_y_scroll()
-            .gap_5()
-            .p_6()
-            .rounded_xl()
-            .border_1()
-            .border_color(pal.border)
-            .bg(pal.sidebar)
-            .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
-            .child(
-                div()
-                    .text_base()
-                    .font_semibold()
-                    .child(pal.ui.schedule_a_scan),
-            )
-            .child(field(
-                pal.ui.project,
+                .child(
+                    Button::new("sched-change")
+                        .ghost()
+                        .xsmall()
+                        .label(pal.ui.change_project)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(d) = this.draft.as_mut() {
+                                d.changing = true;
+                            }
+                            cx.notify();
+                        })),
+                )
+                .into_any_element(),
+            _ => {
+                let rows = self
+                    .recents
+                    .projects
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let on = chosen.as_ref() == Some(&r.path);
+                        let path = r.path.clone();
+                        h_flex()
+                            .id(("pick", i))
+                            .h(px(34.))
+                            .gap_3()
+                            .px_3()
+                            .rounded_md()
+                            .items_center()
+                            .cursor_pointer()
+                            .text_sm()
+                            .when(on, |s| s.bg(pal.active))
+                            .hover(|s| s.bg(pal.hover))
+                            .child(kind_icon(self.kind_of(&r.path)))
+                            .child(div().flex_1().min_w_0().truncate().child(r.name()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if let Some(d) = this.draft.as_mut() {
+                                    d.path = Some(path.clone());
+                                    d.changing = false;
+                                }
+                                cx.notify();
+                            }))
+                    })
+                    .collect::<Vec<_>>();
                 v_flex()
                     .gap_1()
                     .child(
                         v_flex()
                             .id("pick-list")
-                            .max_h(px(150.))
+                            .max_h(px(168.))
                             .overflow_y_scroll()
-                            .children(projects),
+                            .p_1()
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(pal.border)
+                            .children(rows),
                     )
                     .child(
                         Button::new("pick-other")
@@ -2321,6 +2319,7 @@ impl Workspace {
                                         let path = path.canonicalize().unwrap_or(path);
                                         if let Some(d) = this.draft.as_mut() {
                                             d.path = Some(path.clone());
+                                            d.changing = false;
                                         }
                                         this.recents.add(&path);
                                         let _ = this.recents.save();
@@ -2330,25 +2329,121 @@ impl Workspace {
                                 )
                             })),
                     )
-                    .into_any_element(),
-            ))
+                    .into_any_element()
+            }
+        };
+
+        // How often it repeats: three equal choices side by side.
+        let repeats = [Repeat::Once, Repeat::Daily, Repeat::Weekly]
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                chip(
+                    ("repeat", i),
+                    pal.ui.repeat_label(r),
+                    draft.repeat == r,
+                    pal,
+                )
+                .flex_1()
+                .justify_center()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if let Some(d) = this.draft.as_mut() {
+                        d.repeat = r;
+                    }
+                    cx.notify();
+                }))
+            })
+            .collect::<Vec<_>>();
+
+        // In plain words, when the first run will be.
+        let now = now_secs();
+        let time = draft.time.read(cx).time();
+        let summary = next_at(time.hour(), time.minute(), now)
+            .map(|at| pal.ui.plan_summary(at, now, draft.repeat))
+            .unwrap_or_default();
+
+        let field = |label: &'static str, body: AnyElement| {
+            v_flex()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_medium()
+                        .text_color(pal.muted)
+                        .child(label),
+                )
+                .child(body)
+        };
+
+        let card = v_flex()
+            .id("schedule-card")
+            .w(px(460.))
+            .max_w_full()
+            .max_h_full()
+            .overflow_y_scroll()
+            .gap_5()
+            .p_6()
+            .rounded_xl()
+            .border_1()
+            .border_color(pal.border)
+            .bg(pal.sidebar)
+            .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
+            .child(
+                h_flex()
+                    .items_start()
+                    .gap_3()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_base()
+                                    .font_semibold()
+                                    .child(pal.ui.schedule_a_scan),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(pal.muted)
+                                    .child(pal.ui.schedule_subtitle),
+                            ),
+                    )
+                    .child(
+                        Button::new("sched-close")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Close)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.draft = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(field(pal.ui.project, project))
             .child(field(
                 pal.ui.at_time,
-                v_flex()
-                    .gap_2()
-                    .child(TimeField::new(&draft.time).small().w(px(110.)))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(pal.muted)
-                            .child(pal.ui.at_time_hint),
-                    )
+                TimeField::new(&draft.time)
+                    .large()
+                    .w(px(150.))
                     .into_any_element(),
             ))
             .child(field(
                 pal.ui.repeat,
                 h_flex().gap_2().children(repeats).into_any_element(),
             ))
+            .child(
+                h_flex()
+                    .gap_2p5()
+                    .px_3()
+                    .py_2p5()
+                    .items_center()
+                    .rounded_lg()
+                    .bg(pal.hover)
+                    .text_sm()
+                    .child(Icon::new(Lucide::Hourglass).size_4().text_color(pal.muted))
+                    .child(div().flex_1().child(summary)),
+            )
             .child(
                 h_flex()
                     .gap_2()
@@ -2367,6 +2462,7 @@ impl Workspace {
                         Button::new("sched-ok")
                             .primary()
                             .small()
+                            .icon(Icon::new(Lucide::Hourglass))
                             .label(pal.ui.schedule)
                             .disabled(chosen.is_none())
                             .on_click(cx.listener(|this, _, _, cx| this.confirm_schedule(cx))),
