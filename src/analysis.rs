@@ -1,6 +1,6 @@
 use crate::analyzer::Analyzer;
 use crate::assess::{Assessment, assess_all};
-use crate::detect::{Language, scan_manifests, scan_source_files};
+use crate::detect::{Language, scan_manifests_with, scan_source_files_with};
 use crate::finding::Finding;
 use crate::i18n::Lang;
 use crate::knowledge::KnowledgeBase;
@@ -71,9 +71,14 @@ pub struct Analysis {
 /// Scans `root`, analyzes every supported file and assesses the findings,
 /// writing the advice in `lang`.
 pub fn analyze_directory(root: &Path, lang: Lang) -> Analysis {
-    let mut files = scan_source_files(root);
+    analyze_directory_with(root, lang, false)
+}
+
+/// Like [`analyze_directory`], with the tests too when `include_tests` is set.
+pub fn analyze_directory_with(root: &Path, lang: Lang, include_tests: bool) -> Analysis {
+    let mut files = scan_source_files_with(root, include_tests);
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut manifests = scan_manifests(root);
+    let mut manifests = scan_manifests_with(root, include_tests);
     manifests.sort();
     let mut findings = analyze_files(&files);
     findings.extend(analyze_manifests(&manifests));

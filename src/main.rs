@@ -1,4 +1,4 @@
-use agentq::analysis::analyze_directory;
+use agentq::analysis::analyze_directory_with;
 use agentq::assess::Urgency;
 use agentq::finding::{Confidence, QuantumRisk};
 use agentq::i18n::Lang;
@@ -32,6 +32,10 @@ struct Args {
     /// Leave out uses that are already safe against quantum attacks.
     #[arg(long)]
     hide_safe: bool,
+
+    /// Look inside test folders and test files too (left out by default).
+    #[arg(long)]
+    include_tests: bool,
 
     /// Exit with status 3 when a use at least this urgent is found (for CI).
     #[arg(long, value_enum, value_name = "URGENCY")]
@@ -147,7 +151,7 @@ fn main() -> ExitCode {
     }
 
     let path = args.path.unwrap_or_else(|| PathBuf::from("."));
-    let analysis = analyze_directory(&path, lang);
+    let analysis = analyze_directory_with(&path, lang, args.include_tests);
 
     let min_confidence = Confidence::from(args.min_confidence);
     let mut assessments = analysis.assessments;
