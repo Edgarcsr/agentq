@@ -6,7 +6,7 @@
 
 A proposed tool for analyzing source code, identifying uses of cryptography that may be vulnerable to quantum computing, and recommending post-quantum alternatives suited to the system's context.
 
-> **Status:** this prototype implements source scanning, cryptography detection, risk assessment, and reports for JavaScript/TypeScript and Python. Evaluation on real repositories, Java and Go analyzers, and the final thesis remain in progress. The draft, in Portuguese, is in [`docs/tcc.md`](docs/tcc.md).
+> **Status:** this prototype implements source scanning, cryptography detection, risk assessment, and reports for JavaScript/TypeScript, Python, and Java. Evaluation on real repositories, the Go analyzer, and the final thesis remain in progress. The draft, in Portuguese, is in [`docs/tcc.md`](docs/tcc.md).
 
 # Motivation
 
@@ -22,18 +22,18 @@ Sufficiently powerful quantum computers could compromise public-key cryptographi
 
 ## Current prototype
 
-The prototype runs the whole workflow for **JavaScript, TypeScript (Node.js), and Python** projects. Java and Go files are listed by the scanner but not analyzed yet.
+The prototype runs the whole workflow for **JavaScript, TypeScript (Node.js), Python, and Java (JCA/JCE)** projects. Go files are listed by the scanner but not analyzed yet.
 
 1. **Scan.** Walks a directory, respects `.gitignore`, skips dependency and build folders (`node_modules`, `vendor`, `target`, `build`, `dist`, `.next`, `coverage`, `.git`) and tests (folders such as `test`, `tests`, `__tests__`, `spec`, `e2e`, `fixtures`, and files such as `*.test.ts`, `*.spec.js`, `test_*.py`; `--include-tests` brings them back), and lists files in the supported languages and the dependency manifests (`package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`).
-2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`) and each Python file with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, and asynchronous code too (`util.promisify`, callbacks, `await`, `.then`), so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not. It also reads TLS configuration (`tls`, `https` and `http2`): the cipher suites in `ciphers` (each names a key exchange, an authentication algorithm and a cipher), the curves in `ecdhCurve` (a hybrid such as `X25519MLKEM768` counts as post-quantum), `sigalgs` and `dhparam`. The Python analyzer resolves imports and aliases and applies rules for `cryptography`, PyCryptodome, PyNaCl, `rsa`, `ecdsa`, PyJWT, and `hashlib`; comments and strings are not treated as calls.
+2. **Detect.** Parses each JS/TS file (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`), each Python file, and each Java file (`.java`) with [tree-sitter](https://tree-sitter.github.io) and reports cryptographic calls with their location, algorithm, purpose, and key size when it can be read from the code. It follows imports, destructuring, aliases, constants, string concatenation, and template literals, and asynchronous code too (`util.promisify`, callbacks, `await`, `.then`), so `const { createHash: h } = require('node:crypto'); h('md5')` is found, while the same words in comments, strings, or shadowing parameters are not. It also reads TLS configuration (`tls`, `https` and `http2`): the cipher suites in `ciphers` (each names a key exchange, an authentication algorithm and a cipher), the curves in `ecdhCurve` (a hybrid such as `X25519MLKEM768` counts as post-quantum), `sigalgs` and `dhparam`. The Python analyzer resolves imports and aliases and applies rules for `cryptography`, PyCryptodome, PyNaCl, `rsa`, `ecdsa`, PyJWT, and `hashlib`; comments and strings are not treated as calls. The Java analyzer follows JDK imports, static imports, fully qualified names, constants, and instance aliases, and follows each generated key through variables (`pair = generator.generateKeyPair()`, `signer.initSign(pair.getPrivate())`) to infer its purpose.
 3. **Read dependencies.** Packages that bring public-key cryptography (`elliptic`, `node-rsa`, `node-forge`, `tweetnacl`, `ethers`, ...), weak hashes (`md5`, `sha1`) or post-quantum algorithms (`@noble/post-quantum`) are reported from the manifests, listed in [`src/knowledge/packages.toml`](src/knowledge/packages.toml). A declared dependency is not a call, so it has `Medium` confidence (`Low` in `devDependencies` and `peerDependencies`), and `Low` when only a lockfile lists it, as a dependency of a dependency. JWT libraries (`jsonwebtoken`, `jose`, ...) take the algorithm as configuration, so they go to the list for manual review.
-4. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. In Python it follows direct assignments, tuple unpacking and `public_key()` aliases, and a reassignment invalidates the earlier binding. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
+4. **Infer purpose.** An RSA or EC key pair does not say whether it signs, encrypts, or agrees on secrets. The purpose is inferred from the calls that receive the variable holding the key (`sign(null, data, privateKey)`, `publicEncrypt(publicKey, ...)`), and the confidence drops to `medium`. When no call receives it, other uses in the same file give a guess with `low` confidence. In Python it follows direct assignments, tuple unpacking and `public_key()` aliases, and a reassignment invalidates the earlier binding. In Java it follows the key from the generator to `initSign`, `initVerify`, `init` or `doPhase`. Purposes are key exchange, encryption, signature, hash, message authentication (HMAC) and key derivation (PBKDF2, HKDF).
 5. **Assess.** Each finding is matched against a knowledge base ([`src/knowledge/algorithms.toml`](src/knowledge/algorithms.toml), 28 algorithms) that records what threatens it (Shor, Grover, or a classical weakness such as MD5's collisions), an urgency, and the NIST post-quantum alternatives that fit the purpose, with libraries that implement them. Calls that name an algorithm missing from the knowledge base are listed apart for manual review.
 6. **Report.** Text, JSON, or Markdown, most urgent first.
 
 ### How it works
 
-Each language is a separate track (an analyzer behind the same `Analyzer` trait) that feeds a shared assessment and report stage. JS/TS and Python analyzers are implemented; Java and Go remain planned.
+Each language is a separate track (an analyzer behind the same `Analyzer` trait) that feeds a shared assessment and report stage. JS/TS, Python, and Java analyzers are implemented; Go remains planned. The CLI and the terminal interface both use `analyze_directory`, so Java findings also appear in background scans, overview charts, translated advice, and filtered results.
 
 ```mermaid
 flowchart TD
@@ -42,7 +42,8 @@ flowchart TD
 
     route -->|"JS / TS<br/>.js .jsx .mjs .cjs .ts .tsx .mts .cts"| parse
     route -->|"Python<br/>.py"| pyparse["Parse<br/>tree-sitter Python"]
-    route -->|"Java, Go"| pending["Show as <br/>'analyzers not built yet'"]
+    route -->|"Java<br/>.java"| jparse
+    route -->|"Go"| pending["Show as <br/>'analyzers not built yet'"]
 
     subgraph jstrack ["JS/TS track"]
         direction TB
@@ -59,15 +60,31 @@ flowchart TD
         pyrules --> pyfindings["Shared findings<br/>algorithm, purpose, size and confidence"]
       end
 
+    subgraph javatrack ["Java track"]
+        direction TB
+        jparse["Parse<br/>tree-sitter: Java"] --> jbind["Bindings and values<br/>imports, scopes, constants, instance aliases"]
+        jbind --> jrules["JCA/JCE rules<br/>factories, initialization, secret-key specifications"]
+        jrules --> jraw["Findings<br/>file, line, algorithm, purpose, key size, confidence"]
+        jraw --> jinfer["Infer purpose<br/>RSA/EC keys: follow the key variable to initSign, init, doPhase,<br/>else a low-confidence guess from the file"]
+    end
+
     infer --> assess["Assess<br/>knowledge base: quantum risk, urgency,<br/>alternatives that fit the purpose"]
       pyfindings --> assess
+    jinfer --> assess
     assess --> filter["Filters<br/>--min-confidence, --hide-safe"]
     filter --> report["Report, most urgent first<br/>text, JSON or Markdown"]
     pending --> report
 
-    corpus[("Annotated corpora<br/>eval/corpus/node and python")] -.->|"cargo run --bin eval"| metrics["Precision, recall, F1<br/>vs keyword and lexical baselines"]
+    corpus[("Annotated corpora<br/>eval/corpus/node, python and java")] -.->|"cargo run --bin eval"| metrics["Precision, recall, F1<br/>vs keyword and lexical baselines"]
     infer -.-> metrics
+    jinfer -.-> metrics
 ```
+
+Recognized JS/TS APIs: Node.js `crypto`, Web Crypto (`crypto.subtle`), `jsonwebtoken`, `jose`, `node-forge`, `node-rsa`, `elliptic`, `tweetnacl`, `@noble/curves`, `@noble/ed25519`, `@noble/secp256k1`, `crypto-js`, `jsrsasign`, `openpgp`, and `libsodium`. Post-quantum usage (`ml-kem`, `ml-dsa`, `slh-dsa` in `node:crypto` and `@noble/post-quantum`) is reported as safe.
+
+Recognized Java APIs: JCA/JCE `MessageDigest`, `Mac`, `Signature`, `Cipher`, `KeyPairGenerator`, `KeyFactory`, `KeyAgreement`, `KeyGenerator`, `KEM`, `SecretKeyFactory` (PBKDF2), and `SecretKeySpec`. Named algorithms include RSA (including PSS and OAEP), DSA, EC/ECDSA/ECDH, DH, Ed25519, X25519, AES, Triple DES, ChaCha20, MD5, SHA-1, SHA-2, SHA-3, ML-KEM, ML-DSA, and SLH-DSA. Provider overloads such as `Signature.getInstance("SHA256withRSA", "BC")` use the same rules; the analyzer does not load the provider. Java analysis uses the existing Rust/tree-sitter dependencies and does not require a JDK, Maven, or Gradle.
+
+Java key sizes are read from `initialize`, `init`, named curve specifications, or `SecretKeySpec` byte lengths. Generic AES transformations are assessed only when the key size is resolved from the associated key; the analyzer does not assume provider defaults. See the [Java implementation guide (Portuguese)](docs/java-analyzer.md) for examples, integration details, and limitations.
 
 # Usage
 ```sh
@@ -78,6 +95,7 @@ cargo run -- <directory> --hide-safe --min-confidence medium
 cargo run -- --tui                            # pick a project, then browse the findings
 cargo run -- <directory> --tui                # browse the findings of a project
 cargo run -- samples/node-shop --tui          # try it on the bundled sample shop
+cargo run -- tests/fixtures/java_crypto --tui --lang pt-BR # try the Java examples
 ```
 
 The interactive interface (`--tui`, built with [ratatui](https://ratatui.rs)) has two pages, switched with `1`, `2` or `Tab`:
@@ -185,13 +203,24 @@ These tiny, author-written corpora are regression checks, not evidence of perfor
 
 agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools), a lexical scanner, on each other's corpus ([`eval/external`](eval/external)). On qScan's corpus, written without looking at either tool, agentq finds 9 of 22 JS uses against the 21 qScan publishes; part of the gap was scope (TLS configuration, SSH keys, dependency manifests); those numbers were taken before TLS configuration and dependency manifests were supported. On agentq's corpus both find 22 of 23 public-key uses, and agentq gets the algorithm family and the purpose right more often. Sections 6.5 and 6.6 of [`docs/tcc.md`](docs/tcc.md) discuss both results.
 
+Java has a separate annotated corpus at [`eval/corpus/java`](eval/corpus/java), with 8 files and 49 expected uses. Run `cargo run --bin eval -- eval/corpus/java`. Results are saved in [`eval/results/java.md`](eval/results/java.md):
+
+| | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: |
+| agentq | 100.0% | 95.9% | 97.9% |
+| keyword search | 54.3% | 38.8% | 45.2% |
+
+The Java analyzer locates 47 uses with the correct purpose in all 47 cases, including `KeyFlow.java`, where two RSA and two EC keys in one file are told apart only by the variables that carry them. The two misses require resolving a method's return value or a runtime configuration. These are synthetic regression measurements, subject to the same limitations as the Node corpus.
+
 ### Known limitations
 
-- Name resolution is file-local and only considers function parameters for scoping; algorithms chosen at runtime (configuration, values passed through functions) are not reported.
-- Calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked.
-- Purpose inference follows the key by variable name within one file, including the parameters of a Node callback and of a promise's `.then`; in Python it follows direct assignments, tuple unpacking and `public_key()` aliases. It does not follow it through other function parameters, object fields, arbitrary transformations or other files.
+- Name resolution is file-local; algorithms chosen at runtime (configuration, values passed through functions) are not reported. JS/TS scoping only considers function parameters; Java also considers lexical blocks, local declarations, fields, and type declarations.
+- JS/TS calls on values returned by other calls (`key.sign(...)` on a generated key) are not tracked. Java follows selected factory, initialization, and key-generation relationships, rather than arbitrary method calls.
+- Purpose inference follows the key by variable name within one file, including the parameters of a Node callback and of a promise's `.then`; in Python it follows direct assignments, tuple unpacking and `public_key()` aliases; in Java it follows local declarations and fields from the generator to the operation. It does not follow it through other function parameters, object fields, arbitrary transformations or other files. Unrelated keys in one file can influence each other.
 - TLS options are read only when they are literal strings; protocol versions (`minVersion`, `secureProtocol`) and certificates are not examined. Dependency manifests are read for npm projects only.
-- JavaScript, TypeScript and Python are analyzed; Java and Go are not.
+- Java size inference requires consistent initialization in the factory's straight-line block. Conditional, conflicting, or unknown initialization leaves the size unresolved. Generic AES with unresolved key size is omitted because the knowledge base assesses specific AES variants.
+- Java analysis does not resolve other source files, inherited members, reflection, text blocks, Unicode escape preprocessing, or direct third-party cryptographic APIs. Algorithms absent from the knowledge base, such as DES, Ed448, and truncated SHA-512, are omitted.
+- JavaScript, TypeScript, Python, and Java are analyzed; Go is not.
 
 ## Next steps
 
@@ -205,7 +234,8 @@ agentq is also compared with [qScan](https://github.com/quantakrypto/pqc-tools),
 - [ ] Evaluate it on real open-source Node repositories, with manual validation.
 - [ ] Compare it with existing tools on real repositories (first runs against qScan in [`eval/external`](eval/external)).
 - [x] Add the Python analyzer to the shared analyzer, assessment, and report pipeline.
-- [ ] Add analyzers for Java and Go.
+- [x] Add a Java analyzer for JCA/JCE with tests and an annotated evaluation corpus.
+- [ ] Add an analyzer for Go.
 - [ ] Document the results, limitations, and opportunities for future development.
 
 ## Team

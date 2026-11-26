@@ -51,6 +51,17 @@ fn finds_python_files_in_nested_directories() {
 }
 
 #[test]
+fn finds_java_files() {
+    assert_eq!(
+        run_program("java_crypto"),
+        vec![
+            expected("Java", "ClassicCrypto.java"),
+            expected("Java", "SafeCrypto.java"),
+        ]
+    );
+}
+
+#[test]
 fn skips_node_modules() {
     assert_eq!(
         run_program("js_with_node_modules"),
