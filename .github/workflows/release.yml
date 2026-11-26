@@ -1,0 +1,109 @@
+name: Release
+
+# Builds the CLI (agentq) and the desktop app (agentq-gui, GPUI) for
+# macOS, Linux and Windows. Push a tag like v0.1.0 to publish them as
+# release assets; run it by hand (workflow_dispatch) to get the files
+# as workflow artifacts without publishing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install GPUI system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake pkg-config \
+            libasound2-dev libfontconfig-dev libssl-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libxcb-xkb-dev libvulkan1 mesa-vulkan-drivers
+
+      - name: Build CLI
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin agentq
+
+      - name: Build desktop app (GPUI)
+        run: cargo build --release --locked --target ${{ matrix.target }} --features gui --bin agentq-gui
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          out=dist/agentq-${{ matrix.name }}
+          mkdir -p "$out"
+          cp target/${{ matrix.target }}/release/agentq target/${{ matrix.target }}/release/agentq-gui "$out/"
+          cp README.md "$out/"
+          tar -C dist -czf "agentq-${{ matrix.name }}.tar.gz" "agentq-${{ matrix.name }}"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = "dist/agentq-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/agentq.exe", "target/${{ matrix.target }}/release/agentq-gui.exe", "README.md" $out
+          Compress-Archive -Path $out -DestinationPath "agentq-${{ matrix.name }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentq-${{ matrix.name }}
+          path: |
+            agentq-${{ matrix.name }}.tar.gz
+            agentq-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

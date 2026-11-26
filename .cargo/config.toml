@@ -1,0 +1,5 @@
+[alias]
+# cargo tui [PATH]  -> terminal interface
+tui = "run --release -- --tui"
+# cargo gui [PATH]  -> desktop interface (GPUI)
+gui = "run --release --features gui --bin agentq-gui --"
