@@ -1566,7 +1566,7 @@ impl Workspace {
                 let p = path.clone();
                 Button::new("schedule")
                     .small()
-                    .icon(Icon::new(Lucide::CalendarClock))
+                    .icon(Icon::new(Lucide::Hourglass))
                     .label(pal.ui.schedule)
                     .tooltip(pal.ui.schedule_tip)
                     .on_click(cx.listener(move |this, _, window, cx| {
